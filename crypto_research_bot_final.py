@@ -61,6 +61,8 @@ def run_flask():
 threading.Thread(target=run_flask, daemon=True).start()
 
 #=================== Hàm AI tóm tắt tin tức bằng Groq LLM============
+import os
+from groq import Groq
 def ai_summarize(prompt: str) -> str:
     """
     Gọi Groq API để tóm tắt tin tức.

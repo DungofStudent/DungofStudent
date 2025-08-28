@@ -1200,14 +1200,18 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await context.bot.send_message()
     data = query.data
+    chat_id = update.effective_chat.id   # lấy chat id
+
+    # Nếu muốn gửi thông báo khi nhấn nút
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"📩 Bạn vừa chọn: {data}"
+    )
 
     if data.startswith("research:"):
         _, symbol, mode = data.split(":")
         await research_handler(update, context, symbol=symbol, mode=mode)
-
-    chat_id = update.effective_chat.id
 
     if data == "main":
         await query.edit_message_text("🏠 Menu", reply_markup=main_menu())

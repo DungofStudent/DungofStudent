@@ -37,29 +37,6 @@ from telegram.ext import (
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
 
-# ================== ENV & LOG ==================
-load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-if not TELEGRAM_TOKEN:
-    raise RuntimeError("TELEGRAM_TOKEN not found in .env")
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("crypto_bot_opt")
-
-# ================== Fake web for background worker=========================
-app = Flask(__name__)
-
-@app.route("/healthz")
-def health():
-    return "ok", 200
-
-def run_flask():
-    app.run(host="0.0.0.0", port=10000)
-
-# Chạy Flask song song với bot Telegram
-threading.Thread(target=run_flask, daemon=True).start()
-
 #=================== Hàm AI tóm tắt tin tức bằng Groq LLM============
 import os
 from groq import Groq
@@ -88,6 +65,28 @@ def ai_summarize(prompt: str) -> str:
     except Exception as e:
         return f"❌ Lỗi Groq API: {e}"
 
+# ================== ENV & LOG ==================
+load_dotenv()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+if not TELEGRAM_TOKEN:
+    raise RuntimeError("TELEGRAM_TOKEN not found in .env")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("crypto_bot_opt")
+
+# ================== Fake web for background worker=========================
+app = Flask(__name__)
+
+@app.route("/healthz")
+def health():
+    return "ok", 200
+
+def run_flask():
+    app.run(host="0.0.0.0", port=10000)
+
+# Chạy Flask song song với bot Telegram
+threading.Thread(target=run_flask, daemon=True).start()
 
 # ================== GLOBAL STATE ==================
 COINS_LIST = []

@@ -40,32 +40,31 @@ logger = logging.getLogger(__name__)
 #=================== Hàm AI tóm tắt tin tức bằng Groq LLM==============
 from groq import Groq
 def ai_summarize(prompt: str) -> str:
-    """
-    Gọi Groq API để tóm tắt tin tức.
-    Yêu cầu: đặt biến môi trường GROQ_API_KEY trong Railway Variables.
-    """
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        return "⚠️ Chưa có GROQ_API_KEY, không thể gọi AI."
+        return "⚠️ Chưa có GROQ_API_KEY."
 
     try:
         client = Groq(api_key=api_key)
-
-        # Dùng model Llama-3.1 8B-Instruct (nhanh, rẻ) hoặc 70B nếu cần chất lượng cao
-        response = client.chat.completions.create(
-            model="llama3-8b-8192",
+        resp = client.chat.completions.create(
+            model="llama3-8b-8192",   # dùng model hợp lệ
             messages=[
-                {"role": "system", "content": "Bạn là trợ lý AI, hãy tóm tắt ngắn gọn tin tức crypto."},
+                {
+                    "role": "system",
+                    "content": (
+                        "Bạn là trợ lý AI chuyên tóm tắt và dịch tin tức crypto. "
+                        "Hãy dịch toàn bộ nội dung sang tiếng Việt và tóm tắt ngắn gọn, dễ hiểu."
+                    )
+                },
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=300,
-            temperature=0.7
+            max_tokens=400,
+            temperature=0.6
         )
-
-        return response.choices[0].message.content.strip()
-
+        return resp.choices[0].message.content.strip()
     except Exception as e:
-        return f"❌ Lỗi gọi Groq API: {e}"
+        return f"❌ Lỗi Groq API: {e}"
+
 
 # ================== ENV & LOG ==================
 load_dotenv()

@@ -20,11 +20,13 @@ import pandas as pd
 import pandas_ta as ta
 import matplotlib.pyplot as plt
 import logging
+import threading
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
+from flask import Flask
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -43,6 +45,16 @@ if not TELEGRAM_TOKEN:
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crypto_bot_opt")
+# Fake web for background worker
+app = Flask(__name__)@app.route("/healthz")
+def health():
+    return "ok", 200
+
+def run_flask():
+    app.run(host="0.0.0.0", port=10000)
+
+# Chạy Flask song song với bot Telegram
+threading.Thread(target=run_flask, daemon=True).start()
 
 # ================== GLOBAL STATE ==================
 COINS_LIST = []

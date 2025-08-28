@@ -192,6 +192,9 @@ def check_liquidity_strength(df):
 # ================== OKX HELPERS ==================
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
     try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0; +https://github.com/DungofStudent)"
+        }
         r = requests.get(url, params=params, timeout=timeout)
         r.raise_for_status()
         j = r.json()

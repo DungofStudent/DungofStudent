@@ -38,11 +38,8 @@ logger = logging.getLogger(__name__)
 
 # ================== ENV & LOG ==================
 load_dotenv()
-<<<<<<< HEAD
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-=======
->>>>>>> a991afaa6b45c2aee69e6927c2d92e0862b3cc69
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:

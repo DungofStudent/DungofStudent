@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# OS / Editor junk
+*.log
+*.ini
+*.iso
+*.rar
+*.zip
+
+# Office docs
+*.docx
+*.pptx
+
+# Other
+/qlkh/
+/Du_doan/
+/DaoHuyDungSRV12/
+/NTH_quanlykhoahoconline/

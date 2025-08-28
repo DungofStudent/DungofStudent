@@ -45,8 +45,10 @@ if not TELEGRAM_TOKEN:
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crypto_bot_opt")
-# Fake web for background worker
-app = Flask(__name__)@app.route("/healthz")
+# ================== Fake web for background worker=========================
+app = Flask(__name__)
+
+@app.route("/healthz")
 def health():
     return "ok", 200
 

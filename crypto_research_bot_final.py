@@ -222,12 +222,12 @@ def check_liquidity_strength(df):
     except Exception as e:
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
-def split_message(text, limit=4000):
-    return [text[i:i+limit] for i in range(0, len(text), limit)]
+async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
 
-# thay vì gửi trực tiếp final_text:
+    # Chia nhỏ text
     for chunk in split_message(final_text):
-        await waiting_msg.edit_text(chunk, parse_mode=None)
+        await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
 # ================== OKX HELPERS ==================
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):

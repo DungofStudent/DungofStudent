@@ -128,6 +128,8 @@ CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
 
 LAST_ALERT_TIME = {}
+# Biến toàn cục để theo dõi thời gian gửi tin cuối cùng
+last_sent = None
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -220,6 +222,12 @@ def check_liquidity_strength(df):
     except Exception as e:
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
+def split_message(text, limit=4000):
+    return [text[i:i+limit] for i in range(0, len(text), limit)]
+
+# thay vì gửi trực tiếp final_text:
+    for chunk in split_message(final_text):
+        await waiting_msg.edit_text(chunk, parse_mode=None)
 
 # ================== OKX HELPERS ==================
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
@@ -1318,6 +1326,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
+	global last_sent
+    utcnow = datetime.utcnow()
+    if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
+        # ... code gửi tin ...
+        last_sent = utcnow
     """
     Enhanced background job:
      - refresh markets stub

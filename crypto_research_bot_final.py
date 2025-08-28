@@ -53,7 +53,7 @@ def ai_summarize(prompt: str) -> str:
 
         # Dùng model Llama-3.1 8B-Instruct (nhanh, rẻ) hoặc 70B nếu cần chất lượng cao
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instruct",
+            model="llama3-8b-8192",
             messages=[
                 {"role": "system", "content": "Bạn là trợ lý AI, hãy tóm tắt ngắn gọn tin tức crypto."},
                 {"role": "user", "content": prompt}

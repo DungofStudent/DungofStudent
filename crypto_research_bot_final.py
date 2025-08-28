@@ -38,10 +38,10 @@ logger = logging.getLogger(__name__)
 
 # ================== ENV & LOG ==================
 load_dotenv()
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
-    raise RuntimeError("TELEGRAM_TOKEN not found in .env")
+    raise RuntimeError("❌ TELEGRAM_TOKEN not found! Please set it in Railway Variables or .env")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crypto_bot_opt")

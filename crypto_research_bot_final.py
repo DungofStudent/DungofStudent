@@ -77,13 +77,11 @@ LAST_FLOW_ALERTS = {}
 FLOW_TFS = ["3m", "15m", "1H", "4H"]
 FLOW_IMMEDIATE_COOLDOWN = timedelta(minutes=10)  # per (coin,tf,type)
 
-<<<<<<< HEAD
 # API Key cho CryptoPanic (nếu có), nếu không có thì để trống -> bot sẽ fallback CoinStats
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
-=======
+
 LAST_ALERT_TIME = {}
->>>>>>> 3c1d1f4 (Update bot file)
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -122,8 +120,6 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long") -> (float, dict):
     signal = "buy" if pct > 0 else "sell"
     return score, {"signal": signal}
 
-<<<<<<< HEAD
-=======
 
 def can_alert(coin: str, cooldown: int = 3600):
     """
@@ -137,7 +133,6 @@ def can_alert(coin: str, cooldown: int = 3600):
         return True
     return False
 
->>>>>>> 3c1d1f4 (Update bot file)
 def check_liquidity_strength(df):
     """
     Kiểm tra thanh khoản tại thời điểm pump/dump.
@@ -180,10 +175,6 @@ def check_liquidity_strength(df):
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
 
-<<<<<<< HEAD
-
-=======
->>>>>>> 3c1d1f4 (Update bot file)
 # ================== OKX HELPERS ==================
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
     try:
@@ -1145,10 +1136,6 @@ async def scan_alerts(context: ContextTypes.DEFAULT_TYPE):
                     await context.bot.send_message(chat_id=chat_id, text=msg)
     except Exception as e:
         logger.exception(f"scan_alerts error: {e}")
-<<<<<<< HEAD
-
-=======
->>>>>>> 3c1d1f4 (Update bot file)
 
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

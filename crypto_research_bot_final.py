@@ -19,6 +19,7 @@ import logging
 import pandas as pd
 import pandas_ta as ta
 import matplotlib.pyplot as plt
+import logging
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 
@@ -74,8 +75,8 @@ FLOW_TFS = ["3m", "15m", "1H", "4H"]
 FLOW_IMMEDIATE_COOLDOWN = timedelta(minutes=10)  # per (coin,tf,type)
 
 # API Key cho CryptoPanic (nếu có), nếu không có thì để trống -> bot sẽ fallback CoinStats
-CRYPTOPANIC_KEY = ""
-
+CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
+logger = logging.getLogger(__name__)
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -113,6 +114,49 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long") -> (float, dict):
     score = max(0.0, min(100.0, pct * 5 + 50))  # make 0-100
     signal = "buy" if pct > 0 else "sell"
     return score, {"signal": signal}
+
+def check_liquidity_strength(df):
+    """
+    Kiểm tra thanh khoản tại thời điểm pump/dump.
+    Phân biệt pump/dump thật hay giả dựa vào volume và spread.
+    Trả về (ok, text) để đưa vào Alerts.
+    """
+    try:
+        if df.empty or len(df) < 20:
+            return False, "⚠️ Không đủ dữ liệu thanh khoản."
+
+        # Lấy nến cuối cùng
+        last = df.iloc[-1]
+        volume = last["volume"]
+        high, low, close, open_ = last["high"], last["low"], last["close"], last["open"]
+
+        # Volume trung bình 20 nến gần nhất
+        avg_vol = df["volume"].tail(20).mean()
+
+        # Spread giá (mức dao động)
+        spread = (high - low) / low if low > 0 else 0
+
+        # Điều kiện pump thật
+        if volume > 2 * avg_vol and spread > 0.01 and close > (open_ + (high - open_) * 0.5):
+            return True, f"✅ Pump thật: Volume tăng mạnh ({volume:.2f}), spread {spread:.2%}"
+
+        # Điều kiện pump giả (volume tăng nhưng spread nhỏ)
+        if volume > 2 * avg_vol and spread <= 0.01:
+            return False, f"❌ Pump ảo: Volume cao ({volume:.2f}) nhưng spread nhỏ ({spread:.2%})"
+
+        # Điều kiện dump thật
+        if volume > 2 * avg_vol and spread > 0.01 and close < (open_ - (open_ - low) * 0.5):
+            return True, f"⚠️ Dump thật: Volume tăng mạnh ({volume:.2f}), spread {spread:.2%}"
+
+        # Điều kiện dump giả
+        if volume > 2 * avg_vol and spread <= 0.01:
+            return False, f"❌ Dump ảo: Volume cao ({volume:.2f}) nhưng spread nhỏ ({spread:.2%})"
+
+        return False, "ℹ️ Không có tín hiệu pump/dump rõ ràng."
+    except Exception as e:
+        return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
+
+
 
 # ================== OKX HELPERS ==================
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
@@ -1043,6 +1087,38 @@ async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     text = "\n".join(parts)
     await update.message.reply_text(text)
+
+async def scan_alerts(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        for coin in COINS_LIST:
+            df = get_ohlc_okx(coin, bar="1H", limit=200)
+            if df.empty:
+                continue
+
+
+            price = float(df.iloc[-1]["close"])
+            score, details = multi_tf_score(coin, mode="long")
+
+
+            # 🔎 Kiểm tra thanh khoản
+            ok, liq_text = check_liquidity_strength(df)
+
+
+            if abs(score) >= 3 and ok and can_alert(coin):
+                msg = (
+                    f"🚨 Alert {coin}\n"
+                    f"💰 Giá: {price}\n"
+                    f"{liq_text}\n"
+                    f"📊 Score(15m/1H/4H/1D): "
+                    f"{details['15m']['score']:.0f}/"
+                    f"{details['1H']['score']:.0f}/"
+                    f"{details['4H']['score']:.0f}/"
+                    f"{details['1D']['score']:.0f}"
+                )
+                for chat_id in ALERT_CHAT_IDS:
+                    await context.bot.send_message(chat_id=chat_id, text=msg)
+    except Exception as e:
+        logger.exception(f"scan_alerts error: {e}")
 
 
 # ================== HANDLERS ==================

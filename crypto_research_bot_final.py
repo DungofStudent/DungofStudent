@@ -12,6 +12,7 @@
 #   - This file is a drop-in replacement for your current bot. API endpoints are OKX public endpoints.
 #
 # Author: ChatGPT (GPT-5 Thinking)
+#!/usr/bin/env python3
 
 import os
 import requests

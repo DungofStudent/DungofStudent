@@ -1200,7 +1200,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await context.bot.send_message()
     data = query.data
 
     if data.startswith("research:"):

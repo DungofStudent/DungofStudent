@@ -1,10 +1,10 @@
-# .render.yaml
 services:
-  - type: background            # Bot chạy dạng background worker
-    name: crypto-bot           # Tên service trên Render
-    env: python                 # Ngôn ngữ Python
-    pythonVersion: "3.11"       # Chọn Python 3.11
-    buildCommand: "pip install -r requirements.txt"  # Cài dependencies
-    startCommand: "bash start.sh"                   # Start bot
-    autoDeploy: true            # Bật auto-deploy khi push GitHub
-    region: singapore           # Server Singapore (gần VN)
+  - type: web
+    name: crypto-research-bot
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python crypto_research_bot_final.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9

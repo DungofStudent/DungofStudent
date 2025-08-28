@@ -37,6 +37,36 @@ from telegram.ext import (
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
 
+#=================== Hàm AI tóm tắt tin tức bằng Groq LLM==============
+from groq import Groq
+def ai_summarize(prompt: str) -> str:
+    """
+    Gọi Groq API để tóm tắt tin tức.
+    Yêu cầu: đặt biến môi trường GROQ_API_KEY trong Railway Variables.
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return "⚠️ Chưa có GROQ_API_KEY, không thể gọi AI."
+
+    try:
+        client = Groq(api_key=api_key)
+
+        # Dùng model Llama-3.1 8B-Instruct (nhanh, rẻ) hoặc 70B nếu cần chất lượng cao
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instruct",
+            messages=[
+                {"role": "system", "content": "Bạn là trợ lý AI, hãy tóm tắt ngắn gọn tin tức crypto."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=300,
+            temperature=0.7
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        return f"❌ Lỗi gọi Groq API: {e}"
+
 # ================== ENV & LOG ==================
 load_dotenv()
 
@@ -1541,7 +1571,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         news_text = "📰 Tin tức liên quan:\n" + "\n\n".join(news_list)
         ai_news_text = ai_news_analysis(coin, news_list)
         final_text = text_out + "\n\n" + news_text + "\n\n" + ai_news_text + "\n\n" + ai_text
-        await waiting_msg.edit_text(final_text, parse_mode="HTML")
+        await waiting_msg.edit_text(final_text, parse_mode=None)
     except Exception as e:
         logger.exception(f"text_coin_handler error: {e}")
         await waiting_msg.edit_text(f"❌ Lỗi khi phân tích {coin}")

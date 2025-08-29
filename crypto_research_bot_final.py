@@ -1359,7 +1359,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "toggle_alert":
         user_id = update.effective_user.id
-    # Đảo trạng thái alert
+        # Đảo trạng thái alert
         alerts[user_id] = not alerts.get(user_id, False)
         state = "ON ✅" if alerts[user_id] else "OFF ❌"
         await safe_edit(

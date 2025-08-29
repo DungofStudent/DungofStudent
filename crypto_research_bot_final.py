@@ -1193,6 +1193,73 @@ async def scan_alerts(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.exception(f"scan_alerts error: {e}")
 
+async def send_flow_alerts(context, coin: str, sig: dict):
+    """
+    Gửi cảnh báo Pump/Dump thật với phân tích tiếp diễn
+    sig: dict từ detect_flow_multi_tf
+    """
+    tf = sig.get("tf") or "?"
+    d = sig.get("details", {})
+    last_vol = d.get("last_vol", 0)
+    mean_vol = d.get("mean_prev_vol", 0)
+    pct = d.get("price_change_pct", 0.0)
+    inflow = sig.get("inflow")
+    outflow = sig.get("outflow")
+
+    # Lấy dữ liệu 1H để phân tích kỹ thuật
+    df = get_ohlc_okx(coin, bar="1H", limit=200)
+    score_long, inds = compute_trend_score(df, mode="long")
+    score_short, inds_short = compute_trend_score(df, mode="short")
+
+    # Các chỉ báo chính
+    ema12, ema26 = inds.get("ema12"), inds.get("ema26")
+    macd, macd_sig = inds.get("macd"), inds.get("macd_signal")
+    rsi = inds.get("rsi")
+
+    # Kết luận pump/dump tiếp diễn
+    continuation = "❓ Chưa rõ xu hướng tiếp diễn."
+    if inflow:
+        if score_long >= 50 and ema12 > ema26:
+            if macd and macd_sig and macd > macd_sig and (rsi is None or rsi < 75):
+                continuation = "🚀 Khả năng cao tiếp tục PUMP mạnh (EMA & MACD đồng thuận, RSI chưa quá mua)."
+            else:
+                continuation = "⚡ Pump mạnh nhưng chỉ báo chưa đồng thuận hoàn toàn."
+        else:
+            continuation = "⚠️ Pump nhưng xu hướng chưa chắc chắn (cẩn thận trap)."
+
+    elif outflow:
+        if score_short >= 50 and ema12 < ema26:
+            if macd and macd_sig and macd < macd_sig and (rsi is None or rsi > 25):
+                continuation = "⚠️ Khả năng cao tiếp tục DUMP mạnh (EMA & MACD đồng thuận, RSI chưa quá bán)."
+            else:
+                continuation = "⚡ Dump mạnh nhưng chỉ báo chưa đồng thuận hoàn toàn."
+        else:
+            continuation = "⚠️ Dump nhưng xu hướng chưa chắc chắn (cẩn thận trap)."
+
+    # Xây tin nhắn gửi đi
+    if inflow:
+        msg = (
+            f"🔥 [15m] INFLOW đột biến: {coin}\n"
+            f"Vol: {last_vol:.0f} | MeanPrev: {mean_vol:.0f}\n"
+            f"Δ: {pct:.2f}% | Strength: x{d.get('inflow_strength') or 0:.2f}\n\n"
+            f"{continuation}"
+        )
+    else:
+        msg = (
+            f"⚠️ [15m] OUTFLOW đột biến: {coin}\n"
+            f"Vol: {last_vol:.0f} | MeanPrev: {mean_vol:.0f}\n"
+            f"Δ: {pct:.2f}% | Strength: x{d.get('outflow_strength') or 0:.2f}\n\n"
+            f"{continuation}"
+        )
+
+    # Gửi tới các chat đã bật Alerts
+    for chat in list(ALERT_CHAT_IDS):
+        try:
+            await context.bot.send_message(chat_id=chat, text=msg)
+        except Exception as e:
+            logger.exception("Failed to send flow alert")
+
+
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     refresh_markets(MAX_SCAN)
@@ -1399,33 +1466,17 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
 
             # Multi-TF flow detection (immediate alerts to toggled chats)
             # Multi-TF flow detection (immediate alerts to toggled chats)
+            # Multi-TF flow detection (immediate alerts to toggled chats)
             sig = await detect_flow_multi_tf(cid)
             if sig and (sig.get("inflow") or sig.get("outflow")):
                 tf = sig.get("tf") or "?"
                 if tf != "15m":
                     continue  # chỉ gửi alert nếu tf là 15m
-                typ = "inflow" if sig.get("inflow") else "outflow"
-                key = (cid, tf, typ)
-                if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
-                    LAST_FLOW_ALERTS[key] = utcnow
-                    d = sig.get("details", {})
-                    if typ == "inflow":
-                        msg = (
-                            f"🔥 [15m] INFLOW đột biến: {cid}\n"
-                            f"Vol: {d.get('last_vol'):.0f} | MeanPrev: {d.get('mean_prev_vol'):.0f}\n"
-                            f"Δ: {d.get('price_change_pct'):.2f}% | Strength: x{d.get('inflow_strength') or 0:.2f}"
-                        )
-                    else:
-                        msg = (
-                            f"⚠️ [15m] OUTFLOW đột biến: {cid}\n"
-                            f"Vol: {d.get('last_vol'):.0f} | MeanPrev: {d.get('mean_prev_vol'):.0f}\n"
-                            f"Δ: {d.get('price_change_pct'):.2f}% | Strength: x{d.get('outflow_strength') or 0:.2f}"
-                        )
-                    for chat in list(ALERT_CHAT_IDS):
-                        try:
-                            await context.bot.send_message(chat_id=chat, text=msg)
-                        except Exception:
-                            logger.exception("Failed to send 15m flow alert")
+            key = (cid, tf, "inflow" if sig.get("inflow") else "outflow")
+            last = LAST_FLOW_ALERTS.get(key)
+            if not last or (utcnow - last) >= FLOW_IMMEDIATE_COOLDOWN:
+                LAST_FLOW_ALERTS[key] = utcnow
+                await send_flow_alerts(context, cid, sig)
 
     except Exception:
         logger.exception("Error in background_price_checker")

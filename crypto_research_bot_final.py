@@ -1305,7 +1305,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await research_handler(update, context, symbol=symbol, mode=mode)
 
     if data == "main":
-        await safe_edit("🏠 Menu", reply_markup=main_menu())
+        await safe_edit(update.callback_query.message, text="🏠 Menu", reply_markup=main_menu())
 
     elif data.startswith("topcoins:"):
         page = int(data.split(":")[1])
@@ -1320,7 +1320,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for c in subset:
             v = MARKET_MAP.get(c,{}).get("vol_quote_24h",0)
             text += f"- {c}: ~{v:,.0f} USDT\n"
-        await safe_edit(text, reply_markup=coins_page_markup(page))
+        await safe_edit(update.callback_query.message, text=text, reply_markup=coins_page_markup(page))
 
     elif data.startswith("coin:"):
         coin = data.split(":")[1]

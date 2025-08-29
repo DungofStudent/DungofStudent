@@ -1358,17 +1358,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_send(context.bot,chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
 
     elif data == "toggle_alert":
-    user_id = update.effective_user.id
+        user_id = update.effective_user.id
     # Đảo trạng thái alert
-    alerts[user_id] = not alerts.get(user_id, False)
-    state = "ON ✅" if alerts[user_id] else "OFF ❌"
-    await safe_edit(
-        update.callback_query.message,
-        text=f"🔔 Alert hiện tại: {state}",
-        reply_markup=main_menu()
-    )
-
-
+        alerts[user_id] = not alerts.get(user_id, False)
+        state = "ON ✅" if alerts[user_id] else "OFF ❌"
+        await safe_edit(
+            update.callback_query.message,
+            text=f"🔔 Alert hiện tại: {state}",
+            reply_markup=main_menu()
+        )
 
     elif data == "research_btn":
         await safe_edit(update.callback_query.message, text="🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())

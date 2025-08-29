@@ -1685,10 +1685,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text.endswith("-USDT") and not text.endswith("-USD"):
         text = text + "-USDT"
     coin = text
-    if waiting_msg:
-        await waiting_msg.edit_text(final_text, parse_mode=None)
-    else:
-        await safe_send(context.bot, update.effective_chat.id, final_text)
+    waiting_msg = await safe_send(context.bot, chat_id=chat_id, text=f"⏳ Đang phân tích sâu cho {coin}...")
 
     try:
         avg, details = multi_tf_score(coin, mode="long")
@@ -1710,10 +1707,18 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         news_text = "📰 Tin tức liên quan:\n" + "\n\n".join(news_list)
         ai_news_text = ai_news_analysis(coin, news_list)
         final_text = text_out + "\n\n" + news_text + "\n\n" + ai_news_text + "\n\n" + ai_text
-        await waiting_msg.edit_text(final_text, parse_mode=None)
+        if waiting_msg:
+            await waiting_msg.edit_text(final_text, parse_mode=None)
+        else:
+            await safe_send(context.bot, chat_id=chat_id, text=final_text, parse_mode=None)
     except Exception as e:
         logger.exception(f"text_coin_handler error: {e}")
-        await waiting_msg.edit_text(f"❌ Lỗi khi phân tích {coin}")
+        err_text = f"❌ Lỗi khi phân tích {coin}"
+        if waiting_msg:
+            await waiting_msg.edit_text(err_text)
+        else:
+            await safe_send(context.bot, chat_id=chat_id, text=err_text)
+
 
 async def refresh_markets_stub():
     """

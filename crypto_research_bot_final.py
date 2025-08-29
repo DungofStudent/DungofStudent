@@ -1298,7 +1298,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id   # lấy chat id
 
     # Nếu muốn gửi thông báo khi nhấn nút
-    await safe_send(context.bot, chat_id=chat_id,text=msg, text=f"📩 Bạn vừa chọn: {data}"
+    await safe_send(context.bot, chat_id=chat_id, text=f"📩 Bạn vừa chọn: {data}"
     )
 
     if data.startswith("research:"):

@@ -80,6 +80,9 @@ if not TELEGRAM_TOKEN:
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crypto_bot_opt")
+
+bot = Bot(token=TOKEN, request_kwargs={"read_timeout": 30, "connect_timeout": 30})
+app = Application.builder().bot(bot).build()
 # ================== Fake web for background worker=========================
 app = Flask(__name__)
 
@@ -136,8 +139,7 @@ last_sent = None
 
 alerts = {}
 
-bot = Bot(token=TOKEN, request_kwargs={"read_timeout": 30, "connect_timeout": 30})
-app = Application.builder().bot(bot).build()
+
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):

@@ -868,11 +868,12 @@ def ai_news_analysis(coin: str, news_list: list) -> str:
 
 # ================== UI (Telegram) ==================
 def main_menu():
+	state = "ON ✅" if alerts.get(user_id, False) else "OFF ❌"
     keyboard = [
         [InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0")],
         [InlineKeyboardButton("🔍 Research (Scanner)", callback_data="research_btn")],
         [InlineKeyboardButton("📰 Tin tức thị trường", callback_data="news_market_menu")],
-        [InlineKeyboardButton("⚡ Toggle Alerts", callback_data="toggle_alerts")]
+        [InlineKeyboardButton(f"⚡Toggle Alerts: {state}", callback_data="toggle_alert")]
     ]
     return InlineKeyboardMarkup(keyboard)
 

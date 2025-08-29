@@ -1296,10 +1296,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     chat_id = update.effective_chat.id   # lấy chat id
 
-    # Nếu muốn gửi thông báo khi nhấn nút
-    await safe_send(context.bot, chat_id=chat_id, text=f"📩 Bạn vừa chọn: {data}"
-    )
-
     if data.startswith("research:"):
         _, symbol, mode = data.split(":")
         await research_handler(update, context, symbol=symbol, mode=mode)
@@ -1361,13 +1357,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_coins":
         await safe_send(context.bot,chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
 
-    elif data == "toggle_alerts":
-        if chat_id in ALERT_CHAT_IDS:
-            ALERT_CHAT_IDS.remove(chat_id)
-            await safe_send(context.bot,chat_id=chat_id, text="⚡ Alerts: OFF", reply_markup=main_menu())
-        else:
-            ALERT_CHAT_IDS.add(chat_id)
-            await safe_send(context.bot,chat_id=chat_id, text="⚡ Alerts: ON", reply_markup=main_menu())
+    elif data == "toggle_alert":
+    user_id = update.effective_user.id
+    # Đảo trạng thái alert
+    alerts[user_id] = not alerts.get(user_id, False)
+    state = "ON ✅" if alerts[user_id] else "OFF ❌"
+    await safe_edit(update.callback_query.message, text=f"🔔 Alert hiện tại: {state}", reply_markup=main_menu())
+
 
     elif data == "research_btn":
         await safe_edit(update.callback_query.message, text="🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())

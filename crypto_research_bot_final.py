@@ -1371,8 +1371,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_send(context.bot,chat_id=chat_id, text="⚡ Alerts: ON", reply_markup=main_menu())
 
     elif data == "research_btn":
-        await safe_edit(query.message, text="🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
-
+        await safe_edit(update.callback_query.message, text="🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
+		
     elif data == "news_market_menu":
         news_list = get_news_today(limit=10)
         text = "📰 Tin tức hôm nay:\n\n" + "\n\n".join(news_list)

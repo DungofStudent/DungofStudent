@@ -1216,7 +1216,7 @@ async def scan_alerts(context: ContextTypes.DEFAULT_TYPE):
                     f"{details['1D']['score']:.0f}"
                 )
                 for chat_id in ALERT_CHAT_IDS:
-                    await safe_send(context.bot, chat_id, msg)
+                    await safe_send(context.bot, chat_id,text=msg)
     except Exception as e:
         logger.exception(f"scan_alerts error: {e}")
 
@@ -1282,7 +1282,7 @@ async def send_flow_alerts(context, coin: str, sig: dict):
     # Gửi tới các chat đã bật Alerts
     for chat in list(ALERT_CHAT_IDS):
         try:
-            await safe_send(context.bot,id=chat, msg)
+            await safe_send(context.bot,chat_id=chat, text=msg)
         except Exception as e:
             logger.exception("Failed to send flow alert")
 
@@ -1298,7 +1298,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id   # lấy chat id
 
     # Nếu muốn gửi thông báo khi nhấn nút
-    await safe_send(context.bot, chat_id=chat_id, msg, text=f"📩 Bạn vừa chọn: {data}"
+    await safe_send(context.bot, chat_id=chat_id,text=msg, text=f"📩 Bạn vừa chọn: {data}"
     )
 
     if data.startswith("research:"):
@@ -1328,7 +1328,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         price = MARKET_MAP.get(coin, {}).get("current_price")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         txt = f"🔎 {coin}\nGiá: {price} USDT\nThanh khoản 24h: ~{volq:,.0f} USDT"
-        await safe_send(context.bot,id=chat_id, msg, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot, chat_id=chat_id, text=msg, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("chart:"):
         coin = data.split(":")[1]
@@ -1341,7 +1341,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         df = get_ohlc_okx(coin, bar="1H", limit=200)
         _, inds = compute_trend_score(df, mode="long")  # returns score + inds
         if not inds:
-            await safe_send(context.bot,id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
+            await safe_send(context.bot,chat_id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
             return
         text = (f"📋 {coin} (1H):\n"
                 f"- Close: {inds.get('latest_close')}\n"
@@ -1350,25 +1350,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"- MACD/MACDs: {inds.get('macd')}/{inds.get('macd_signal')}\n"
                 f"- ADX: {inds.get('adx')}\n"
                 f"- Signal: {inds.get('signal')}\n")
-        await safe_send(context.bot,id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot,chat_id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("ai:"):
         coin = data.split(":")[1]
         avg, details = multi_tf_score(coin, mode="long")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         ai_text = ai_analysis(coin, details, volq, "long")
-        await safe_send(context.bot,id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot,chat_id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
 
     elif data == "back_coins":
-        await safe_send(context.bot,id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
+        await safe_send(context.bot,chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
 
     elif data == "toggle_alerts":
         if chat_id in ALERT_CHAT_IDS:
             ALERT_CHAT_IDS.remove(chat_id)
-            await safe_send(context.bot,id=chat_id, text="⚡ Alerts: OFF", reply_markup=main_menu())
+            await safe_send(context.bot,chat_id=chat_id, text="⚡ Alerts: OFF", reply_markup=main_menu())
         else:
             ALERT_CHAT_IDS.add(chat_id)
-            await safe_send(context.bot,id=chat_id, text="⚡ Alerts: ON", reply_markup=main_menu())
+            await safe_send(context.bot,chat_id=chat_id, text="⚡ Alerts: ON", reply_markup=main_menu())
 
     elif data == "research_btn":
         await safe_edit("🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
@@ -1386,13 +1386,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         coin = data.split(":")[1]
         news_list = get_news_general()
         news_text = "📰 Tin tức thị trường:\n\n" + "\n\n".join(news_list)
-        await safe_send(context.bot,id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     elif data.startswith("news_coin:"):
         coin = data.split(":")[1]
         news_list = get_news_coin(coin)
         news_text = f"💡 Tin tức về {coin}:\n\n" + "\n\n".join(news_list)
-        await safe_send(context.bot,id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     if data == "research_long":
         await research_handler(update, context, mode="long")
@@ -1418,7 +1418,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"DCA (30 orders):\n{', '.join(map(str,d30))}\n\n"
             f"Grid (10):\n{', '.join(map(str,grid10))}\n"
         )
-        await safe_send(context.bot,id=chat_id, text=text)
+        await safe_send(context.bot,chat_id=chat_id, text=text)
 
 
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
@@ -1527,7 +1527,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
 
 async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="long"):
     chat_id = update.effective_chat.id
-    await safe_send(context.bot,id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
+    await safe_send(context.bot,chat_id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
 
 
     refresh_markets(MAX_SCAN)

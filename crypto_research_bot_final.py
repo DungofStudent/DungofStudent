@@ -29,6 +29,9 @@ from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 from flask import Flask
 
+from telegram import Bot
+from telegram.ext import Application
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
@@ -132,6 +135,9 @@ LAST_ALERT_TIME = {}
 last_sent = None
 
 alerts = {}
+
+bot = Bot(token=TOKEN, request_kwargs={"read_timeout": 30, "connect_timeout": 30})
+app = Application.builder().bot(bot).build()
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -537,7 +543,8 @@ async def safe_send(bot, chat_id, text, **kwargs):
     try:
         return await bot.send_message(chat_id=chat_id, text=text, **kwargs)
     except Exception as e:
-        logger.exception(f"send_message failed: {e}")
+        logging.error(f"send_message failed: {e}")
+        return None
 
 async def safe_edit(message, text, **kwargs):
     MAX_LEN = 4000

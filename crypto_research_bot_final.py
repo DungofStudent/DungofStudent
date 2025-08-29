@@ -1098,6 +1098,7 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f" • 15 orders sample: {', '.join(map(lambda x: str(x['price']), cfg15['steps'][:5]))}...\n"
                 f" • 20 orders sample: {', '.join(map(lambda x: str(x['price']), cfg20['steps'][:5]))}...\n"
                 f" • 30 orders sample: {', '.join(map(lambda x: str(x['price']), cfg30['steps'][:5]))}...\n"
+				f"Sức chống chịu (max drawdown): {cfg15['max_drawdown_pct']}%"
                 f"🔲 Grid: {len(grid_cfg['grid_levels'])-1} grids | step% ≈ {grid_cfg['grid_step_pct']}% | Range: {grid_cfg['support']} ↔ {grid_cfg['resistance']}\n"
             )
             lines.append(line)

@@ -537,7 +537,7 @@ async def safe_send(bot, chat_id, text, **kwargs):
     except Exception as e:
         logger.exception(f"send_message failed: {e}")
 
-async def safe_edit(query, text, **kwargs):
+async def safe_edit(message, text, **kwargs):
     MAX_LEN = 4000
     if len(text) > MAX_LEN:
         text = text[:MAX_LEN] + "\n... (cắt bớt)"

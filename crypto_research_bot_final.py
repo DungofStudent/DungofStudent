@@ -1216,7 +1216,7 @@ async def scan_alerts(context: ContextTypes.DEFAULT_TYPE):
                     f"{details['1D']['score']:.0f}"
                 )
                 for chat_id in ALERT_CHAT_IDS:
-                    await safe_send(context.botchat_id=chat_id, text=msg)
+                    await safe_send(context.bot,id=chat_id, text=msg)
     except Exception as e:
         logger.exception(f"scan_alerts error: {e}")
 
@@ -1282,7 +1282,7 @@ async def send_flow_alerts(context, coin: str, sig: dict):
     # Gửi tới các chat đã bật Alerts
     for chat in list(ALERT_CHAT_IDS):
         try:
-            await safe_send(context.botchat_id=chat, text=msg)
+            await safe_send(context.bot,id=chat, text=msg)
         except Exception as e:
             logger.exception("Failed to send flow alert")
 
@@ -1330,7 +1330,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         price = MARKET_MAP.get(coin, {}).get("current_price")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         txt = f"🔎 {coin}\nGiá: {price} USDT\nThanh khoản 24h: ~{volq:,.0f} USDT"
-        await safe_send(context.botchat_id=chat_id, text=txt, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot,id=chat_id, text=txt, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("chart:"):
         coin = data.split(":")[1]
@@ -1343,7 +1343,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         df = get_ohlc_okx(coin, bar="1H", limit=200)
         _, inds = compute_trend_score(df, mode="long")  # returns score + inds
         if not inds:
-            await safe_send(context.botchat_id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
+            await safe_send(context.bot,id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
             return
         text = (f"📋 {coin} (1H):\n"
                 f"- Close: {inds.get('latest_close')}\n"
@@ -1352,25 +1352,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"- MACD/MACDs: {inds.get('macd')}/{inds.get('macd_signal')}\n"
                 f"- ADX: {inds.get('adx')}\n"
                 f"- Signal: {inds.get('signal')}\n")
-        await safe_send(context.botchat_id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot,id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("ai:"):
         coin = data.split(":")[1]
         avg, details = multi_tf_score(coin, mode="long")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         ai_text = ai_analysis(coin, details, volq, "long")
-        await safe_send(context.botchat_id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot,id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
 
     elif data == "back_coins":
-        await safe_send(context.botchat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
+        await safe_send(context.bot,id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
 
     elif data == "toggle_alerts":
         if chat_id in ALERT_CHAT_IDS:
             ALERT_CHAT_IDS.remove(chat_id)
-            await safe_send(context.botchat_id=chat_id, text="⚡ Alerts: OFF", reply_markup=main_menu())
+            await safe_send(context.bot,id=chat_id, text="⚡ Alerts: OFF", reply_markup=main_menu())
         else:
             ALERT_CHAT_IDS.add(chat_id)
-            await safe_send(context.botchat_id=chat_id, text="⚡ Alerts: ON", reply_markup=main_menu())
+            await safe_send(context.bot,id=chat_id, text="⚡ Alerts: ON", reply_markup=main_menu())
 
     elif data == "research_btn":
         await safe_edit("🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
@@ -1388,13 +1388,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         coin = data.split(":")[1]
         news_list = get_news_general()
         news_text = "📰 Tin tức thị trường:\n\n" + "\n\n".join(news_list)
-        await safe_send(context.botchat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        await safe_send(context.bot,id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     elif data.startswith("news_coin:"):
         coin = data.split(":")[1]
         news_list = get_news_coin(coin)
         news_text = f"💡 Tin tức về {coin}:\n\n" + "\n\n".join(news_list)
-        await safe_send(context.botchat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        await safe_send(context.bot,id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     if data == "research_long":
         await research_handler(update, context, mode="long")
@@ -1420,7 +1420,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"DCA (30 orders):\n{', '.join(map(str,d30))}\n\n"
             f"Grid (10):\n{', '.join(map(str,grid10))}\n"
         )
-        await safe_send(context.botchat_id=chat_id, text=text)
+        await safe_send(context.bot,id=chat_id, text=text)
 
 
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
@@ -1458,7 +1458,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                 text = "📰 Tin tức thị trường (mới):\n\n" + "\n\n".join(new_articles)
                 for chat in list(ALERT_CHAT_IDS):
                     try:
-                        await safe_send(context.botchat_id=chat, text=text)
+                        await safe_send(context.bot,id=chat, text=text)
                     except Exception:
                         logger.exception("Failed to send hourly market news")
             LAST_NEWS_HOUR = utcnow
@@ -1488,7 +1488,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                         )
                         for chat in list(ALERT_CHAT_IDS):
                             try:
-                                await safe_send(context.botchat_id=chat, text=msg)
+                                await safe_send(context.bot,id=chat, text=msg)
                             except Exception:
                                 logger.exception("Failed to send price change alert")
 
@@ -1521,7 +1521,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                     )
                 for chat in list(ALERT_CHAT_IDS):
                     try:
-                        await safe_send(context.botchat_id=chat, text=msg)
+                        await safe_send(context.bot,id=chat, text=msg)
                     except Exception:
                         logger.exception("Failed to send 15m flow alert")
     except Exception:
@@ -1529,7 +1529,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
 
 async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="long"):
     chat_id = update.effective_chat.id
-    await safe_send(context.botchat_id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
+    await safe_send(context.bot,id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
 
 
     refresh_markets(MAX_SCAN)
@@ -1627,12 +1627,12 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if not context.args:
-        await safe_send(context.botchat_id, "Ví dụ: /deepcoin BTC")
+        await safe_send(context.bot,id, "Ví dụ: /deepcoin BTC")
         return
     coin = context.args[0].upper()
     if not coin.endswith("-USDT") and not coin.endswith("-USD"):
         coin = coin + "-USDT"
-    waiting_msg = await safe_send(context.botchat_id, f"⏳ Đang phân tích sâu cho {coin}...")
+    waiting_msg = await safe_send(context.bot,id, f"⏳ Đang phân tích sâu cho {coin}...")
 
     try:
         avg, details = multi_tf_score(coin, mode="long")
@@ -1662,7 +1662,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text.endswith("-USDT") and not text.endswith("-USD"):
         text = text + "-USDT"
     coin = text
-    waiting_msg = await safe_send(context.botchat_id, f"⏳ Đang phân tích sâu cho {coin}...")
+    waiting_msg = await safe_send(context.bot,id, f"⏳ Đang phân tích sâu cho {coin}...")
 
     try:
         avg, details = multi_tf_score(coin, mode="long")

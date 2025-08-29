@@ -1362,7 +1362,12 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Đảo trạng thái alert
     alerts[user_id] = not alerts.get(user_id, False)
     state = "ON ✅" if alerts[user_id] else "OFF ❌"
-    await safe_edit(update.callback_query.message, text=f"🔔 Alert hiện tại: {state}", reply_markup=main_menu())
+    await safe_edit(
+        update.callback_query.message,
+        text=f"🔔 Alert hiện tại: {state}",
+        reply_markup=main_menu()
+    )
+
 
 
     elif data == "research_btn":

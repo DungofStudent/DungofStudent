@@ -131,6 +131,8 @@ LAST_ALERT_TIME = {}
 # Biến toàn cục để theo dõi thời gian gửi tin cuối cùng
 last_sent = None
 
+alerts = {}
+
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
     """
@@ -1357,7 +1359,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_coins":
         await safe_send(context.bot,chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
 
-    elif data == "toggle_alert":
+    elif data == "toggle_alerts":
         user_id = update.effective_user.id
         # Đảo trạng thái alert
         alerts[user_id] = not alerts.get(user_id, False)

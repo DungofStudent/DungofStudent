@@ -867,13 +867,13 @@ def ai_news_analysis(coin: str, news_list: list) -> str:
 
 
 # ================== UI (Telegram) ==================
-def main_menu():
-	state = "ON ✅" if alerts.get(user_id, False) else "OFF ❌"
+def main_menu(user_id: int) -> InlineKeyboardMarkup:
+    state = "ON ✅" if alerts.get(user_id, False) else "OFF ❌"
     keyboard = [
         [InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0")],
         [InlineKeyboardButton("🔍 Research (Scanner)", callback_data="research_btn")],
         [InlineKeyboardButton("📰 Tin tức thị trường", callback_data="news_market_menu")],
-        [InlineKeyboardButton(f"⚡Toggle Alerts: {state}", callback_data="toggle_alert")]
+        [InlineKeyboardButton(f"⚡ Toggle Alerts: {state}", callback_data="toggle_alert")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -1303,8 +1303,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, symbol, mode = data.split(":")
         await research_handler(update, context, symbol=symbol, mode=mode)
 
-    if data == "main":
-        await safe_edit(update.callback_query.message, text="🏠 Menu", reply_markup=main_menu())
+    elif data == "main":
+        user_id = update.effective_user.id
+        await safe_edit(
+            update.callback_query.message,
+            text="🏠 Menu",
+            reply_markup=main_menu(user_id)
+        )
 
     elif data.startswith("topcoins:"):
         page = int(data.split(":")[1])
@@ -1360,15 +1365,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_coins":
         await safe_send(context.bot,chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
 
-    elif data == "toggle_alerts":
+    elif data == "toggle_alert":
         user_id = update.effective_user.id
-        # Đảo trạng thái alert
         alerts[user_id] = not alerts.get(user_id, False)
-        state = "ON ✅" if alerts[user_id] else "OFF ❌"
         await safe_edit(
             update.callback_query.message,
-            text=f"🔔 Alert hiện tại: {state}",
-            reply_markup=main_menu()
+            text="🏠 Menu",
+            reply_markup=main_menu(user_id)
         )
 
     elif data == "research_btn":

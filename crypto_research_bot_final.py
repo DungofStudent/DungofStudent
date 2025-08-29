@@ -1685,7 +1685,10 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text.endswith("-USDT") and not text.endswith("-USD"):
         text = text + "-USDT"
     coin = text
-    waiting_msg = await safe_send(context.bot,id, f"⏳ Đang phân tích sâu cho {coin}...")
+    if waiting_msg:
+        await waiting_msg.edit_text(final_text, parse_mode=None)
+    else:
+        await safe_send(context.bot, update.effective_chat.id, final_text)
 
     try:
         avg, details = multi_tf_score(coin, mode="long")

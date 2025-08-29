@@ -530,16 +530,16 @@ async def detect_flow_multi_tf(symbol: str):
 # ================== NEWS API ==================
 LAST_NEWS_CACHE = []
 LAST_NEWS_FETCH = None
-NEWS_CACHE_TTL = timedelta(minutes=10) 
+NEWS_CACHE_TTL = timedelta(minutes=35) 
 
 def get_news_general(limit: int = 5):
     global LAST_NEWS_CACHE, LAST_NEWS_FETCH
     now = datetime.now()
-    
-    # nếu cache còn hạn thì trả về cache
+
+    # Nếu cache còn hạn thì trả về cache
     if LAST_NEWS_FETCH and (now - LAST_NEWS_FETCH) < NEWS_CACHE_TTL:
         return LAST_NEWS_CACHE[:limit]
-    
+
     # Thử lấy từ CryptoPanic trước
     try:
         url = "https://cryptopanic.com/api/v1/posts/"
@@ -547,6 +547,11 @@ def get_news_general(limit: int = 5):
         r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         j = r.json()
+
+        # Nếu trả về quota limit thì bỏ qua và fallback
+        if "error" in j or "message" in j and "limit" in j["message"].lower():
+            raise RuntimeError("CryptoPanic quota exceeded")
+
         articles = j.get("results", [])
         out = []
         for a in articles[:limit]:
@@ -558,9 +563,9 @@ def get_news_general(limit: int = 5):
             LAST_NEWS_CACHE = out
             LAST_NEWS_FETCH = now
             return out
-    except Exception as e:
-        logger.warning(f"CryptoPanic error: {e}, dùng fallback CoinStats")
-    
+    except Exception:
+        logger.warning("CryptoPanic lỗi/quota full → fallback CoinStats")
+
     # fallback CoinStats
     try:
         url = "https://api.coinstats.app/public/v1/news"
@@ -580,7 +585,7 @@ def get_news_general(limit: int = 5):
             return out[:limit]
     except Exception as e:
         logger.exception("CoinStats fallback error")
-    
+
     # nếu không lấy được gì
     return ["Không lấy được tin tức thị trường."]
 

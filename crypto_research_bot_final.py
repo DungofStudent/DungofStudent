@@ -1282,7 +1282,7 @@ async def send_flow_alerts(context, coin: str, sig: dict):
     # Gửi tới các chat đã bật Alerts
     for chat in list(ALERT_CHAT_IDS):
         try:
-            await safe_send(context.bot,id=chat, text=msg)
+            await safe_send(context.bot,id=chat, msg)
         except Exception as e:
             logger.exception("Failed to send flow alert")
 
@@ -1298,9 +1298,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id   # lấy chat id
 
     # Nếu muốn gửi thông báo khi nhấn nút
-    await safe_send(context.bot
-        chat_id=chat_id,
-        text=f"📩 Bạn vừa chọn: {data}"
+    await safe_send(context.bot, chat_id=chat_id, msg, text=f"📩 Bạn vừa chọn: {data}"
     )
 
     if data.startswith("research:"):
@@ -1330,7 +1328,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         price = MARKET_MAP.get(coin, {}).get("current_price")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         txt = f"🔎 {coin}\nGiá: {price} USDT\nThanh khoản 24h: ~{volq:,.0f} USDT"
-        await safe_send(context.bot,id=chat_id, text=txt, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot,id=chat_id, msg, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("chart:"):
         coin = data.split(":")[1]

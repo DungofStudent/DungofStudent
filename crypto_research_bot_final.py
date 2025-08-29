@@ -542,10 +542,9 @@ async def safe_edit(query, text, **kwargs):
     if len(text) > MAX_LEN:
         text = text[:MAX_LEN] + "\n... (cắt bớt)"
     try:
-        return await safe_edit(text, **kwargs)
+        return await message.edit_text(text, **kwargs)
     except Exception:
-        # fallback nếu edit fail thì gửi mới
-        return await query.message.reply_text(text, **kwargs)
+        return await message.reply_text(text, **kwargs)
 
 
 # ================== NEWS API ==================

@@ -1480,8 +1480,8 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                 if tf != "15m":
                     continue  # bỏ qua nếu không phải 15m
 
-            typ = "inflow" if sig.get("inflow") else "outflow"
-            key = (cid, tf, typ)   # lúc này tf chắc chắn đã có giá trị
+                typ = "inflow" if sig.get("inflow") else "outflow"
+                key = (cid, tf, typ)   # lúc này tf chắc chắn đã có giá trị
 
             if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
                 LAST_FLOW_ALERTS[key] = utcnow

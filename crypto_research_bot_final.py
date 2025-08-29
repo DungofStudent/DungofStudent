@@ -1292,7 +1292,12 @@ async def send_flow_alerts(context, coin: str, sig: dict):
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     refresh_markets(MAX_SCAN)
-    await update.message.reply_text("👋 Crypto Research Bot (OKX • Liquidity & Trend)", reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(
+        "👋 Crypto Research Bot (OKX • Liquidity & Trend)",
+        reply_markup=main_menu(user_id)
+    )
+
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

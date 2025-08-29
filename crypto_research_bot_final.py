@@ -1588,7 +1588,7 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
 
     if not results:
-        await safe_send(context.bot
+        await safe_send(context.bot,
             chat_id=chat_id,
             text="❌ Không tìm thấy coin có xu hướng rõ ràng và thanh khoản đủ.",
             reply_markup=research_choice_markup()
@@ -1614,7 +1614,7 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
     reply = "\n".join(lines)
 
 
-    await safe_send(context.bot
+    await safe_send(context.bot,
         chat_id=chat_id,
         text=reply,
         parse_mode="HTML",

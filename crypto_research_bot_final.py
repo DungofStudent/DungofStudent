@@ -1216,7 +1216,7 @@ async def scan_alerts(context: ContextTypes.DEFAULT_TYPE):
                     f"{details['1D']['score']:.0f}"
                 )
                 for chat_id in ALERT_CHAT_IDS:
-                    await safe_send(context.bot,id=chat_id, text=msg)
+                    await safe_send(context.bot, chat_id, msg)
     except Exception as e:
         logger.exception(f"scan_alerts error: {e}")
 

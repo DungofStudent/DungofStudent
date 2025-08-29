@@ -1404,9 +1404,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
     global last_sent
-    utcnow = datetime.utcnow()
+    utcnow = datetime.now(timezone.utc)
+
+# Khi gán last_sent cũng phải dùng aware datetime
     if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
-        # ... code gửi tin ...
         last_sent = utcnow
     """
     Enhanced background job:

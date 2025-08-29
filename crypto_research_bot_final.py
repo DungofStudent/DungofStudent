@@ -1477,13 +1477,31 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
             if sig and (sig.get("inflow") or sig.get("outflow")):
                 tf = sig.get("tf") or "?"
                 if tf != "15m":
-                    continue  # chỉ gửi alert nếu tf là 15m
-            key = (cid, tf, "inflow" if sig.get("inflow") else "outflow")
-            last = LAST_FLOW_ALERTS.get(key)
-            if not last or (utcnow - last) >= FLOW_IMMEDIATE_COOLDOWN:
-                LAST_FLOW_ALERTS[key] = utcnow
-                await send_flow_alerts(context, cid, sig)
+                    continue  # bỏ qua nếu không phải 15m
 
+            typ = "inflow" if sig.get("inflow") else "outflow"
+            key = (cid, tf, typ)   # lúc này tf chắc chắn đã có giá trị
+
+            if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
+                LAST_FLOW_ALERTS[key] = utcnow
+                d = sig.get("details", {})
+                if typ == "inflow":
+                    msg = (
+                        f"🔥 [15m] INFLOW đột biến: {cid}\n"
+                        f"Vol: {d.get('last_vol'):.0f} | MeanPrev: {d.get('mean_prev_vol'):.0f}\n"
+                        f"Δ: {d.get('price_change_pct'):.2f}% | Strength: x{d.get('inflow_strength') or 0:.2f}"
+                    )
+                else:
+                    msg = (
+                        f"⚠️ [15m] OUTFLOW đột biến: {cid}\n"
+                        f"Vol: {d.get('last_vol'):.0f} | MeanPrev: {d.get('mean_prev_vol'):.0f}\n"
+                        f"Δ: {d.get('price_change_pct'):.2f}% | Strength: x{d.get('outflow_strength') or 0:.2f}"
+                    )
+                for chat in list(ALERT_CHAT_IDS):
+                    try:
+                        await context.bot.send_message(chat_id=chat, text=msg)
+                    except Exception:
+                        logger.exception("Failed to send 15m flow alert")
     except Exception:
         logger.exception("Error in background_price_checker")
 

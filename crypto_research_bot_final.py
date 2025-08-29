@@ -24,6 +24,7 @@ import logging
 import threading
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
+import html
 
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
@@ -546,6 +547,9 @@ async def safe_send(bot, chat_id, text, **kwargs):
     if len(text) > MAX_LEN:
         text = text[:MAX_LEN] + "\n... (cắt bớt)"
     try:
+        # Escape toàn bộ text trước khi gửi (khi dùng HTML)
+        if kwargs.get("parse_mode") == "HTML":
+            text = html.escape(text)
         return await bot.send_message(chat_id=chat_id, text=text, **kwargs)
     except Exception as e:
         logging.error(f"send_message failed: {e}")

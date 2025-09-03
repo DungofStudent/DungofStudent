@@ -1519,7 +1519,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "bot_dca_btn":
         await research_dca_bot(update, context)
 
-	elif data == "bot_dca_btn":
+    elif data == "bot_dca_btn":
         keyboard = [
             [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
             [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],

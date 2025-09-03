@@ -1520,16 +1520,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await research_dca_bot(update, context)
 
 	elif data == "bot_dca_btn":
-    keyboard = [
-        [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
-        [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
-        [InlineKeyboardButton("🔎 Tất cả", callback_data="bot_dca_all")],
-        [InlineKeyboardButton("⬅️ Quay lại", callback_data="main_menu")]
-    ]
-    await update.callback_query.message.edit_text(
-        "Chọn chế độ lọc Bot DCA:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+        keyboard = [
+            [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
+            [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
+            [InlineKeyboardButton("🔎 Tất cả", callback_data="bot_dca_all")],
+            [InlineKeyboardButton("⬅️ Quay lại", callback_data="main_menu")]
+        ]
+        await update.callback_query.message.edit_text(
+            "Chọn chế độ lọc Bot DCA:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     elif data == "bot_dca_bull":
         await research_dca_bot(update, context, mode="bull")
     elif data == "bot_dca_bear":

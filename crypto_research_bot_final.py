@@ -221,34 +221,33 @@ def check_liquidity_strength(df):
 
 
 # ================== OKX HELPERS ==================
-def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0; +https://github.com/DungofStudent)",
-            "Accept": "application/json"
-        }
-        r = requests.get(url, params=params, headers=headers, timeout=timeout)
-        r.raise_for_status()
-        j = r.json()
-        if j.get("code") not in (None, "0"):
-            logger.warning(f"OKX non-zero code: {j}")
-        return j
-    except requests.exceptions.HTTPError as e:
-        # fallback sang aws.okx.com nếu bị 403
-        if "403" in str(e) and "www.okx.com" in url:
-            alt_url = url.replace("www.okx.com", "aws.okx.com")
-            try:
-                r = requests.get(alt_url, params=params, headers=headers, timeout=timeout)
-                r.raise_for_status()
-                j = r.json()
-                return j
-            except Exception as e2:
-                logger.exception(f"OKX fallback error: {alt_url} {params} {e2}")
-        logger.exception(f"OKX request error: {url} {params} {e}")
-        return {}
-    except Exception as e:
-        logger.exception(f"OKX request error: {url} {params} {e}")
-        return {}
+OKX_BASE = "https://aws.okx.com"
+
+def okx_get_json(endpoint: str, params: dict | None = None, timeout: int = 15):
+    """
+    Gọi API OKX qua aws.okx.com (ít bị chặn hơn www.okx.com).
+    Tự động fallback sang www.okx.com nếu aws cũng lỗi.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0; +https://github.com/DungofStudent)",
+        "Accept": "application/json"
+    }
+    url1 = f"{OKX_BASE}{endpoint}"
+    url2 = url1.replace("aws.okx.com", "www.okx.com")
+
+    for url in (url1, url2):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            j = r.json()
+            if j.get("code") not in (None, "0"):
+                logger.warning(f"OKX non-zero code: {j}")
+            return j
+        except Exception as e:
+            logger.warning(f"OKX request failed {url}: {e}")
+            continue
+    return {}
+
 
 
 def refresh_markets(limit: int = MAX_SCAN):
@@ -258,12 +257,11 @@ def refresh_markets(limit: int = MAX_SCAN):
     """
     try:
         # 1) Instruments (SWAP)
-        url_inst = "https://www.okx.com/api/v5/public/instruments"
-        inst_j = okx_get_json(url_inst, {"instType": "SWAP"})
+        inst_j = okx_get_json("/api/v5/public/instruments", {"instType": "SWAP"})
         data = inst_j.get("data", []) if inst_j else []
+
         # 2) Tickers (SWAP)
-        url_tickers = "https://www.okx.com/api/v5/market/tickers"
-        tick_j = okx_get_json(url_tickers, {"instType": "SWAP"})
+        tick_j = okx_get_json("/api/v5/market/tickers", {"instType": "SWAP"})
         tickers = tick_j.get("data", []) if tick_j else []
 
         # Map tickers by instId for quick join
@@ -286,6 +284,7 @@ def refresh_markets(limit: int = MAX_SCAN):
             last = t.get("last")
             vol_quote = t.get("volCcy24h")  # quote currency volume (USDT)
             vol_base = t.get("vol24h")      # base volume (contracts)
+
             try:
                 last = float(last) if last is not None else None
             except:
@@ -311,8 +310,8 @@ def refresh_markets(limit: int = MAX_SCAN):
 
         # keep only liquid instruments and take top `limit` by vol_quote_24h
         liquid = sorted(out.values(), key=lambda x: x.get("vol_quote_24h", 0.0), reverse=True)
-        liquid = [x for x in liquid if x.get("vol_quote_24h", 0.0) >= 0]  # keep all; volume filter later
         liquid = liquid[:limit]
+
         # finalize maps
         global MARKET_MAP, COINS_LIST
         MARKET_MAP = {f"{x['base']}-USDT": x for x in liquid}

@@ -164,23 +164,46 @@ def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (O
     except Exception:
         return None, None
 
-def compute_trend_score(df: pd.DataFrame, mode: str = "long") -> (float, dict):
+def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
     """
-    Placeholder score: returns a naive strength based on slope of closes.
-    Replace with real indicator computing from your previous file.
+    Trả về (score, trend_type)
+    trend_type = 'bullish' | 'bearish'
     """
-    if df is None or df.empty:
-        return 0.0, {"signal": None}
-    closes = df["close"].astype(float)
-    if len(closes) < 3:
-        return 0.0, {"signal": None}
-    # simple slope percentage over last part
-    start = closes.iloc[0]
-    end = closes.iloc[-1]
-    pct = ((end - start) / start) * 100 if start != 0 else 0.0
-    score = max(0.0, min(100.0, pct * 5 + 50))  # make 0-100
-    signal = "buy" if pct > 0 else "sell"
-    return score, {"signal": signal}
+    if len(df) < 50:
+        return 0, "neutral"
+
+    df = df.copy()
+    df["ema20"] = df["close"].ewm(span=20).mean()
+    df["ema50"] = df["close"].ewm(span=50).mean()
+
+    # RSI
+    delta = df["close"].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = -delta.where(delta < 0, 0).rolling(14).mean()
+    rs = gain / (loss + 1e-9)
+    df["rsi"] = 100 - (100 / (1 + rs))
+
+    last = df.iloc[-1]
+    score = 0
+
+    if last["ema20"] > last["ema50"]:
+        score += 30
+    else:
+        score -= 30
+
+    if last["rsi"] > 55:
+        score += 30
+    elif last["rsi"] < 45:
+        score -= 30
+
+    if last["close"] > last["ema50"]:
+        score += 40
+    else:
+        score -= 40
+
+    trend_type = "bullish" if score >= 60 else "bearish" if score <= -60 else "neutral"
+    return score, trend_type
+
 
 
 def can_alert(coin: str, cooldown: int = 3600):
@@ -932,6 +955,19 @@ def news_menu_markup(coin_id):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+elif data == "bot_dca_btn":
+    keyboard = [
+        [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
+        [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
+        [InlineKeyboardButton("🔎 Tất cả", callback_data="bot_dca_all")],
+        [InlineKeyboardButton("⬅️ Quay lại", callback_data="main_menu")]
+    ]
+    await update.callback_query.message.edit_text(
+        "Chọn chế độ lọc Bot DCA:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
 # ================== HELPERS ==================
 def percent_change_over_period(df: pd.DataFrame, lookback: int = 24):
     if df.empty or len(df) <= lookback:
@@ -1153,36 +1189,42 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     out = "\n\n".join(lines) if lines else "No results"
     await update.message.reply_text(out, parse_mode="HTML", disable_web_page_preview=True)
 
-async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "all"):
     """
     Quét các coin có thanh khoản cao + xu hướng rõ ràng để gợi ý bot DCA.
+    mode = all | bull | bear
     """
     lines = []
     for coin, info in MARKET_MAP.items():
         try:
             price = info.get("current_price")
             volq = info.get("vol_quote_24h", 0)
-            if not price or volq < 10_000_000:  # lọc coin có thanh khoản >= 10M USDT
+            if not price or volq < 10_000_000:
                 continue
 
-            # lấy dữ liệu D1 để tính support/resistance
             df1d = get_ohlc_okx(coin, bar="1D", limit=200)
             if df1d.empty:
+                continue
+
+            trend_score, trend_type = compute_trend_score(df1d)
+
+            # lọc theo mode
+            if mode == "bull" and trend_type != "bullish":
+                continue
+            if mode == "bear" and trend_type != "bearish":
+                continue
+            if mode == "all" and abs(trend_score) < 60:
                 continue
 
             sup, res = compute_support_resistance_from_df(df1d, window=90)
             if not sup or sup >= price:
                 continue
 
-            # % drawdown từ giá hiện tại đến support
             max_dd_pct = ((price - sup) / price) * 100.0
-
-            # bước giá trung bình cho 15/20/30 lệnh
             step15 = round(max_dd_pct / 15, 3)
             step20 = round(max_dd_pct / 20, 3)
             step30 = round(max_dd_pct / 30, 3)
 
-            # ký quỹ gợi ý = margin * số lệnh * (drawdown%)
             margin = 20
             kq15 = round(margin * 15 * (max_dd_pct/100), 3)
             kq20 = round(margin * 20 * (max_dd_pct/100), 3)
@@ -1192,7 +1234,8 @@ async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🔎 <b>{coin}</b>\n"
                 f"Giá hiện tại: <code>{price:.4f}</code>\n"
                 f"Support gần nhất: <code>{sup:.4f}</code>\n"
-                f"Max Drawdown: <code>{max_dd_pct:.2f}%</code>\n\n"
+                f"Max Drawdown: <code>{max_dd_pct:.2f}%</code>\n"
+                f"Trend Score: <b>{trend_score}</b> ({trend_type})\n\n"
                 f"➡️ Bước giá gợi ý:\n"
                 f"- 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
                 f"- 20 lệnh: {step20}% | Ký quỹ ≈ {kq20}\n"
@@ -1207,7 +1250,8 @@ async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
     out = "\n\n".join(lines) if lines else "❌ Không tìm thấy coin phù hợp."
-    await update.callback_query.message.reply_text(out, parse_mode="HTML", disable_web_page_preview=True)
+    chat_id = update.effective_chat.id
+    await safe_send(context.bot, chat_id=chat_id, text=out, parse_mode="HTML", disable_web_page_preview=True)
 
 
 async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1485,6 +1529,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "bot_dca_btn":
         await research_dca_bot(update, context)
+
+    elif data == "bot_dca_bull":
+        await research_dca_bot(update, context, mode="bull")
+    elif data == "bot_dca_bear":
+        await research_dca_bot(update, context, mode="bear")
+    elif data == "bot_dca_all":
+        await research_dca_bot(update, context, mode="all")
+
 
 
     elif data.startswith("dca:"):

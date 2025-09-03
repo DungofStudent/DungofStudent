@@ -888,6 +888,7 @@ def main_menu(user_id: int) -> InlineKeyboardMarkup:
     keyboard = [
         [InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0")],
         [InlineKeyboardButton("🔍 Research (Scanner)", callback_data="research_btn")],
+        [InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_btn")],
         [InlineKeyboardButton("📰 Tin tức thị trường", callback_data="news_market_menu")],
         [InlineKeyboardButton(f"⚡ Toggle Alerts: {state}", callback_data="toggle_alert")]
     ]
@@ -1151,6 +1152,63 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     out = "\n\n".join(lines) if lines else "No results"
     await update.message.reply_text(out, parse_mode="HTML", disable_web_page_preview=True)
+
+async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Quét các coin có thanh khoản cao + xu hướng rõ ràng để gợi ý bot DCA.
+    """
+    lines = []
+    for coin, info in MARKET_MAP.items():
+        try:
+            price = info.get("current_price")
+            volq = info.get("vol_quote_24h", 0)
+            if not price or volq < 10_000_000:  # lọc coin có thanh khoản >= 10M USDT
+                continue
+
+            # lấy dữ liệu D1 để tính support/resistance
+            df1d = get_ohlc_okx(coin, bar="1D", limit=200)
+            if df1d.empty:
+                continue
+
+            sup, res = compute_support_resistance_from_df(df1d, window=90)
+            if not sup or sup >= price:
+                continue
+
+            # % drawdown từ giá hiện tại đến support
+            max_dd_pct = ((price - sup) / price) * 100.0
+
+            # bước giá trung bình cho 15/20/30 lệnh
+            step15 = round(max_dd_pct / 15, 3)
+            step20 = round(max_dd_pct / 20, 3)
+            step30 = round(max_dd_pct / 30, 3)
+
+            # ký quỹ gợi ý = margin * số lệnh * (drawdown%)
+            margin = 20
+            kq15 = round(margin * 15 * (max_dd_pct/100), 3)
+            kq20 = round(margin * 20 * (max_dd_pct/100), 3)
+            kq30 = round(margin * 30 * (max_dd_pct/100), 3)
+
+            text = (
+                f"🔎 <b>{coin}</b>\n"
+                f"Giá hiện tại: <code>{price:.4f}</code>\n"
+                f"Support gần nhất: <code>{sup:.4f}</code>\n"
+                f"Max Drawdown: <code>{max_dd_pct:.2f}%</code>\n\n"
+                f"➡️ Bước giá gợi ý:\n"
+                f"- 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
+                f"- 20 lệnh: {step20}% | Ký quỹ ≈ {kq20}\n"
+                f"- 30 lệnh: {step30}% | Ký quỹ ≈ {kq30}\n"
+                f"(margin x20, step×=0.97, money×=1.05)\n"
+                "——————————————"
+            )
+            lines.append(text)
+
+        except Exception as e:
+            logger.error(f"DCA research error {coin}: {e}")
+            continue
+
+    out = "\n\n".join(lines) if lines else "❌ Không tìm thấy coin phù hợp."
+    await update.callback_query.message.reply_text(out, parse_mode="HTML", disable_web_page_preview=True)
+
 
 async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1424,6 +1482,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "research_short":
         await research_handler(update, context, mode="short")
+
+    elif data == "bot_dca_btn":
+        await research_dca_bot(update, context)
+
 
     elif data.startswith("dca:"):
         coin = data.split(":")[1]

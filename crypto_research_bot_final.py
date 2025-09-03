@@ -955,17 +955,6 @@ def news_menu_markup(coin_id):
     ]
     return InlineKeyboardMarkup(keyboard)
 
-elif data == "bot_dca_btn":
-    keyboard = [
-        [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
-        [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
-        [InlineKeyboardButton("🔎 Tất cả", callback_data="bot_dca_all")],
-        [InlineKeyboardButton("⬅️ Quay lại", callback_data="main_menu")]
-    ]
-    await update.callback_query.message.edit_text(
-        "Chọn chế độ lọc Bot DCA:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
 
 
 # ================== HELPERS ==================
@@ -1530,13 +1519,23 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "bot_dca_btn":
         await research_dca_bot(update, context)
 
+	elif data == "bot_dca_btn":
+    keyboard = [
+        [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
+        [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
+        [InlineKeyboardButton("🔎 Tất cả", callback_data="bot_dca_all")],
+        [InlineKeyboardButton("⬅️ Quay lại", callback_data="main_menu")]
+    ]
+    await update.callback_query.message.edit_text(
+        "Chọn chế độ lọc Bot DCA:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
     elif data == "bot_dca_bull":
         await research_dca_bot(update, context, mode="bull")
     elif data == "bot_dca_bear":
         await research_dca_bot(update, context, mode="bear")
     elif data == "bot_dca_all":
         await research_dca_bot(update, context, mode="all")
-
 
 
     elif data.startswith("dca:"):

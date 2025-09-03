@@ -348,6 +348,7 @@ def get_ohlc_okx(instId: str, bar: str = "1H", limit: int = 100) -> pd.DataFrame
         logger.exception(f"Parse OHLC error: {instId} {bar} {e}")
         return pd.DataFrame()
 
+
 def detect_flow_signals(coin: str):
     """
     Return dict with:

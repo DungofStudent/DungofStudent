@@ -223,17 +223,32 @@ def check_liquidity_strength(df):
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0; +https://github.com/DungofStudent)"
+            "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0; +https://github.com/DungofStudent)",
+            "Accept": "application/json"
         }
-        r = requests.get(url, params=params, timeout=timeout)
+        r = requests.get(url, params=params, headers=headers, timeout=timeout)
         r.raise_for_status()
         j = r.json()
         if j.get("code") not in (None, "0"):
             logger.warning(f"OKX non-zero code: {j}")
         return j
+    except requests.exceptions.HTTPError as e:
+        # fallback sang aws.okx.com nếu bị 403
+        if "403" in str(e) and "www.okx.com" in url:
+            alt_url = url.replace("www.okx.com", "aws.okx.com")
+            try:
+                r = requests.get(alt_url, params=params, headers=headers, timeout=timeout)
+                r.raise_for_status()
+                j = r.json()
+                return j
+            except Exception as e2:
+                logger.exception(f"OKX fallback error: {alt_url} {params} {e2}")
+        logger.exception(f"OKX request error: {url} {params} {e}")
+        return {}
     except Exception as e:
         logger.exception(f"OKX request error: {url} {params} {e}")
         return {}
+
 
 def refresh_markets(limit: int = MAX_SCAN):
     """

@@ -98,6 +98,7 @@ ALERT_CHAT_IDS = set()
 ALERT_THRESHOLD = 4.0  # % change between checks to alert
 MIN_QUOTE_VOL = 10_000_000  # USDT, 24h quote volume filter (liquidity floor)
 MAX_SCAN = 200  # max instruments to scan from OKX
+OKX_BASE = "https://aws.okx.com"
 
 # Flow detection globals
 LAST_HOURLY_INFLOW_ALERT = {}   # key: coin -> datetime of last hourly inflow alert
@@ -326,7 +327,7 @@ def get_ohlc_okx(instId: str, bar: str = "1H", limit: int = 100) -> pd.DataFrame
     Lấy dữ liệu OHLC từ OKX (REST API).
     Có xử lý fallback nếu bị chặn 403.
     """
-    url = "https://www.okx.com/api/v5/market/candles"
+    url = f"{OKX_BASE}/api/v5/market/candles"
     params = {"instId": instId, "bar": bar, "limit": limit}
     j = okx_get_json(url, params=params)
 

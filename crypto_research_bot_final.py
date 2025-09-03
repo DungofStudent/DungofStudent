@@ -1690,13 +1690,8 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             f"🧭 15m/1H/4H/1D: <code>{r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']}</code>\n"
             f"💧 Vol24h≈ <code>{r['volq']:,.0f} USDT</code>\n"
             f"💰 Giá: <code>{r['price']}</code> | 24h: <code>{r['pct_24h']}%</code>\n"
-            f"🎯 Entry gợi ý: <code>{r['entry']}</code>\n"
+            f"🎯 Entry gợi ý: {r['entry']}\n"
             f"🛑 Kháng cự: <code>{r['resistance']}</code> | 🛡️ Hỗ trợ: <code>{r['support']}</code>\n"
-            f"\n🤖 <b>DCA Future suggestions</b> (TP={cfg15['tp_pct']}% | Lev=x{cfg15['leverage']})\n"
-            f"• 15 orders: step ≈ {cfg15['avg_step_pct']}% | sức chống chịu ≈ {cfg15['max_drawdown_pct']}%\n"
-            f"• 20 orders: step ≈ {cfg20['avg_step_pct']}% | sức chống chịu ≈ {cfg20['max_drawdown_pct']}%\n"
-            f"• 30 orders: step ≈ {cfg30['avg_step_pct']}% | sức chống chịu ≈ {cfg30['max_drawdown_pct']}%\n"
-            f"🔲 Grid (first 5/last 1 of 10): <code>{','.join(map(str, r['grid_10'][:5]))}...{r['grid_10'][-1]}</code>\n"
         )
     reply = "\n".join(lines)
 

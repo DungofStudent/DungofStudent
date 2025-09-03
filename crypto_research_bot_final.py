@@ -321,42 +321,31 @@ def refresh_markets(limit: int = MAX_SCAN):
     except Exception:
         logger.exception("refresh_markets error")
 
-def get_ohlc_okx(instId="BTC-USDT", bar="1H", limit=200):
+def get_ohlc_okx(instId: str, bar: str = "1H", limit: int = 100) -> pd.DataFrame:
     """
-    Return OHLC df with columns: ts, open, high, low, close, vol, volCcy
-    (we keep vol/volCcy so downstream can compute flow signals)
+    Lấy dữ liệu OHLC từ OKX (REST API).
+    Có xử lý fallback nếu bị chặn 403.
     """
+    url = "https://www.okx.com/api/v5/market/candles"
+    params = {"instId": instId, "bar": bar, "limit": limit}
+    j = okx_get_json(url, params=params)
+
+    if not j or "data" not in j:
+        return pd.DataFrame()
+
     try:
-        url = "https://www.okx.com/api/v5/market/candles"
-        params = {"instId": instId, "bar": bar, "limit": limit}
-        j = okx_get_json(url, params)
-        data = j.get("data", []) if j else []
-        if not data:
-            return pd.DataFrame()
-        # OKX returns list of lists: [ts, open, high, low, close, vol, ...]
-        # We'll try to parse flexible shape
-        df = pd.DataFrame(data)
-        # Normalize columns by length: common OKX structure has at least 7 cols
-        # We'll map known positions: 0=ts,1=open,2=high,3=low,4=close,5=vol
-        df = df.rename(columns={
-            0: "ts", 1: "open", 2: "high", 3: "low", 4: "close", 5: "vol"
+        df = pd.DataFrame(j["data"], columns=[
+            "ts", "open", "high", "low", "close", "volume", "volCcy"
+        ])
+        df["ts"] = pd.to_datetime(df["ts"], unit="ms")
+        df = df.astype({
+            "open": float, "high": float, "low": float,
+            "close": float, "volume": float, "volCcy": float
         })
-        # Ensure numeric
-        for c in ["open","high","low","close","vol"]:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-        # parse ts (OKX may return ms or epoch string)
-        try:
-            df["ts"] = pd.to_datetime(df["ts"].astype(float), unit="ms", utc=True)
-        except Exception:
-            try:
-                df["ts"] = pd.to_datetime(df["ts"], utc=True)
-            except:
-                pass
         df = df.sort_values("ts").reset_index(drop=True)
-        return df[["ts","open","high","low","close","vol"]]
+        return df
     except Exception as e:
-        logger.error(f"Error get_ohlc_okx {instId}: {e}")
+        logger.exception(f"Parse OHLC error: {instId} {bar} {e}")
         return pd.DataFrame()
 
 def detect_flow_signals(coin: str):

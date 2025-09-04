@@ -149,8 +149,13 @@ def home():
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put(update)
+    try:
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        application.update_queue.put(update)
+        return "ok", 200   # phải return về cho Flask
+    except Exception as e:
+        logger.exception(f"Webhook error: {e}")
+        return "error", 500
 
 
 # === Support/Resistance & scoring helpers (simplified) ===

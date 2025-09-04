@@ -1,23 +1,10 @@
-# bắt buộc để tránh lỗi build
-pip>=24.0
-setuptools>=70.0
-wheel>=0.41.0
-
-# data science
-numpy==1.23.5
-pandas==1.5.3
-matplotlib==3.7.3
-
-# trading/TA
-pandas-ta==0.3.14b0   # bản stable, có wheel
-
-# bot & server
+numpy==1.26.4
+pandas==2.2.2
+matplotlib==3.9.2
+pandas-ta==0.3.14b0
 python-telegram-bot==20.8
 python-dotenv==1.0.1
 requests==2.32.3
 apscheduler==3.10.4
-Flask==3.0.3
-
-# AI
 openai==1.51.2
-groq>=0.9.0   # đảm bảo lấy bản mới nhất
+Flask==3.0.3

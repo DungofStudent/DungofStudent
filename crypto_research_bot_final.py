@@ -110,6 +110,7 @@ app = Flask(__name__)
 
 # Telegram Application
 application = Application.builder().token(TOKEN).build()
+asyncio.get_event_loop().run_until_complete(application.initialize())
 
 # Flow detection globals
 LAST_HOURLY_INFLOW_ALERT = {}   # key: coin -> datetime of last hourly inflow alert
@@ -151,11 +152,16 @@ def home():
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        asyncio.run(application.process_update(update))
+        data = request.get_json(force=True)
+        update = Update.de_json(data, application.bot)
+
+        # xử lý update trong asyncio loop
+        asyncio.get_event_loop().create_task(application.process_update(update))
+
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
+        app.logger.error(f"Webhook error: {e}", exc_info=True)
         return "error", 500
+
     return "ok", 200
 
 # === Support/Resistance & scoring helpers (simplified) ===
@@ -1871,7 +1877,7 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    # Đặt webhook cho Telegram
+    # Set webhook
     set_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
     params = {"url": WEBHOOK_URL}
     try:
@@ -1881,5 +1887,5 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Failed to set webhook: {e}")
 
-    # Chạy Flask server để Render giữ service luôn sống
+    # Chạy Flask giữ bot sống
     app.run(host="0.0.0.0", port=PORT)

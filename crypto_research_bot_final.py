@@ -29,6 +29,7 @@ import html
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 from flask import Flask, request
+import asyncio
 
 from telegram import Bot
 from telegram.ext import Application
@@ -151,12 +152,14 @@ def home():
 def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
-        application.update_queue.put(update)
-        return "ok", 200   # phải return về cho Flask
+
+        # Tạo task async để process update
+        asyncio.get_event_loop().create_task(application.process_update(update))
+
+        return "ok", 200
     except Exception as e:
         logger.exception(f"Webhook error: {e}")
         return "error", 500
-
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):

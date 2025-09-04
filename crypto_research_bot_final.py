@@ -153,8 +153,13 @@ def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
 
-        # Tạo task async để process update
-        asyncio.get_event_loop().create_task(application.process_update(update))
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        loop.create_task(application.process_update(update))
 
         return "ok", 200
     except Exception as e:

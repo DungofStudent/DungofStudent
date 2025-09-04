@@ -155,14 +155,16 @@ def webhook():
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
 
-        # xử lý update trong asyncio loop
-        asyncio.get_event_loop().create_task(application.process_update(update))
+        # Lấy event loop chính và chạy coroutine an toàn
+        loop = asyncio.get_event_loop()
+        asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
 
     except Exception as e:
         app.logger.error(f"Webhook error: {e}", exc_info=True)
         return "error", 500
 
     return "ok", 200
+
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):

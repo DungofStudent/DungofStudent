@@ -1119,6 +1119,9 @@ def suggest_grid_future(price: float, support: Optional[float] = None, resistanc
 # === Bot commands & handlers ===
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Hello! Use /research to scan coins and /dca <COIN> to get DCA/Grid suggestions.")
+	# Add handlers
+    application.add_handler(CommandHandler("start", start_command))
+
 
 async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """

@@ -144,9 +144,9 @@ last_sent = None
 
 alerts = {}
 # ================== Flask routes =====================
-@app.route("/")
+@flask_app.route("/")
 def home():
-    return "✅ Bot is running with Flask + Webhook!"
+    return "✅ Bot is running with Flask + Polling!"
 
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
@@ -1876,20 +1876,14 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
+    import threading
+
+    # Thread 1: Flask server để Render giữ app sống
+    threading.Thread(
+        target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
+        daemon=True
+    ).start()
+
+    # Thread 2: Bot chạy bằng polling
     print("🚀 Starting bot in polling mode...")
     application.run_polling()
-    # Khởi tạo & start application
-    loop.run_until_complete(application.initialize())
-    loop.run_until_complete(application.start())
-
-    # Đăng ký webhook với Telegram
-    set_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
-    params = {"url": WEBHOOK_URL}
-    try:
-        r = requests.get(set_url, params=params)
-        print("Webhook set:", r.json())
-    except Exception as e:
-        print("Set webhook error:", e)
-
-    # Chạy Flask
-    app.run(host="0.0.0.0", port=PORT)

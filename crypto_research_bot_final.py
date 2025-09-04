@@ -477,6 +477,31 @@ def _normalize_okx_candles_to_df(data: List[List[Any]]) -> pd.DataFrame:
     df = df.sort_values("ts").reset_index(drop=True)
     return df[["ts", "open", "high", "low", "close", "vol"]]
 
+def fetch_okx(url, params=None):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}  # fix 403
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        logger.error(f"OKX request error: {url} {params} {e}")
+        return None
+
+
+def fetch_tickers_okx():
+    url = f"{OKX_BASE}/market/tickers"
+    params = {"instType": "SWAP"}
+    data = fetch_okx(url, params)
+    return data.get("data", []) if data else []
+
+
+def fetch_instruments_okx():
+    url = f"{OKX_BASE}/public/instruments"
+    params = {"instType": "SWAP"}
+    data = fetch_okx(url, params)
+    return data.get("data", []) if data else []
+
+
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
     if len(df) < 2:

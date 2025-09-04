@@ -1845,6 +1845,8 @@ async def refresh_markets_stub():
 # ================== MAIN ==================
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    # Add handlers
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("research", research_handler))
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
@@ -1852,9 +1854,10 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
     logger.info("Bot polling...")
 
-    # background job every 60s
+    # Background job every 60s
     app.job_queue.run_repeating(background_price_checker, interval=60, first=5)
 
+    # Bot chạy polling
     app.run_polling()
 
 if __name__ == "__main__":
@@ -1866,6 +1869,6 @@ if __name__ == "__main__":
         daemon=True
     ).start()
 
-    # Thread 2: Bot chạy bằng polling
+    # Thread 2: chạy bot qua main()
     print("🚀 Starting bot in polling mode...")
-    application.run_polling()
+    main()

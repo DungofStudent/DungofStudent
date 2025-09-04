@@ -143,6 +143,25 @@ LAST_ALERT_TIME = {}
 last_sent = None
 
 alerts = {}
+# ================== Flask routes =====================
+@app.route("/")
+def home():
+    return "✅ Bot is running with Flask + Webhook!"
+
+@app.route(WEBHOOK_PATH, methods=["POST"])
+def webhook():
+    try:
+        data = request.get_json(force=True)
+        update = Update.de_json(data, application.bot)
+
+        # Đưa update vào Telegram application
+        asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
+
+    except Exception as e:
+        app.logger.error(f"Webhook error: {e}", exc_info=True)
+        return "error", 500
+
+    return "ok", 200
 
 
 # === Support/Resistance & scoring helpers (simplified) ===
@@ -1397,25 +1416,6 @@ async def send_flow_alerts(context, coin: str, sig: dict):
         except Exception as e:
             logger.exception("Failed to send flow alert")
 
-# ================== Flask routes =====================
-@app.route("/")
-def home():
-    return "✅ Bot is running with Flask + Webhook!"
-
-@app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    try:
-        data = request.get_json(force=True)
-        update = Update.de_json(data, application.bot)
-
-        # Đưa update vào Telegram application
-        asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
-
-    except Exception as e:
-        app.logger.error(f"Webhook error: {e}", exc_info=True)
-        return "error", 500
-
-    return "ok", 200
 
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

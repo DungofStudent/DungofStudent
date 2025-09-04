@@ -108,6 +108,12 @@ WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 # Flask app
 app = Flask(__name__)
 
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+# Initialize Telegram Application
+loop.run_until_complete(application.initialize())
+
 # Telegram Application
 application = Application.builder().token(TOKEN).build()
 asyncio.get_event_loop().run_until_complete(application.initialize())
@@ -155,8 +161,7 @@ def webhook():
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
 
-        # Lấy event loop chính và chạy coroutine an toàn
-        loop = asyncio.get_event_loop()
+        # Gửi task vào loop global
         asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
 
     except Exception as e:
@@ -164,7 +169,6 @@ def webhook():
         return "error", 500
 
     return "ok", 200
-
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -1879,7 +1883,7 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    # Set webhook
+    # Đặt webhook cho Telegram
     set_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
     params = {"url": WEBHOOK_URL}
     try:
@@ -1889,5 +1893,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Failed to set webhook: {e}")
 
-    # Chạy Flask giữ bot sống
+    # Chạy Flask song song với loop Telegram
+    threading.Thread(target=lambda: loop.run_forever(), daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)

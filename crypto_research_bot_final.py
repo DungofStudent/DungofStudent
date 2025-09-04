@@ -28,7 +28,7 @@ import html
 
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
-from flask import Flask
+from flask import Flask, request
 
 from telegram import Bot
 from telegram.ext import Application

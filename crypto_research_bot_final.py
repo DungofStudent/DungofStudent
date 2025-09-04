@@ -106,12 +106,9 @@ WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 
 # Flask app
-app = Flask(__name__)
-
+flask_app = Flask(__name__)
 # Telegram Application
 application = Application.builder().token(TOKEN).build()
-
-# Tạo loop riêng cho Telegram
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
@@ -146,26 +143,6 @@ LAST_ALERT_TIME = {}
 last_sent = None
 
 alerts = {}
-
-# ================== Flask routes =====================
-@app.route("/")
-def home():
-    return "✅ Bot is running with Flask + Webhook!"
-
-@app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    try:
-        data = request.get_json(force=True)
-        update = Update.de_json(data, application.bot)
-
-        # Đưa update vào Telegram application
-        asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
-
-    except Exception as e:
-        app.logger.error(f"Webhook error: {e}", exc_info=True)
-        return "error", 500
-
-    return "ok", 200
 
 
 # === Support/Resistance & scoring helpers (simplified) ===
@@ -1420,6 +1397,25 @@ async def send_flow_alerts(context, coin: str, sig: dict):
         except Exception as e:
             logger.exception("Failed to send flow alert")
 
+# ================== Flask routes =====================
+@app.route("/")
+def home():
+    return "✅ Bot is running with Flask + Webhook!"
+
+@app.route(WEBHOOK_PATH, methods=["POST"])
+def webhook():
+    try:
+        data = request.get_json(force=True)
+        update = Update.de_json(data, application.bot)
+
+        # Đưa update vào Telegram application
+        asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
+
+    except Exception as e:
+        app.logger.error(f"Webhook error: {e}", exc_info=True)
+        return "error", 500
+
+    return "ok", 200
 
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1433,6 +1429,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+	await query.answer()
     data = query.data
     chat_id = update.effective_chat.id   # lấy chat id
 
@@ -1879,7 +1876,12 @@ def main():
 
     app.run_polling()
 
+
 if __name__ == "__main__":
+    # Khởi tạo & start application
+    loop.run_until_complete(application.initialize())
+    loop.run_until_complete(application.start())
+
     # Đăng ký webhook với Telegram
     set_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
     params = {"url": WEBHOOK_URL}
@@ -1889,5 +1891,5 @@ if __name__ == "__main__":
     except Exception as e:
         print("Set webhook error:", e)
 
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    # Chạy Flask
+    app.run(host="0.0.0.0", port=PORT)

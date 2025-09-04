@@ -1863,7 +1863,6 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    if __name__ == "__main__":
     # Đặt webhook cho Telegram
     set_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
     params = {"url": WEBHOOK_URL}

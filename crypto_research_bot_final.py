@@ -1120,9 +1120,9 @@ def suggest_grid_future(price: float, support: Optional[float] = None, resistanc
 
 # === Bot commands & handlers ===
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! Use /research to scan coins and /dca <COIN> to get DCA/Grid suggestions.")
-	# Add handlers
-    application.add_handler(CommandHandler("start", start_command))
+    await update.message.reply_text("🤖 Bot OKX đã sẵn sàng!")
+
+application.add_handler(CommandHandler("start", start_command))
 
 
 async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1881,16 +1881,14 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    # Đặt webhook cho Telegram
+    # Đăng ký webhook với Telegram
     set_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
     params = {"url": WEBHOOK_URL}
     try:
         r = requests.get(set_url, params=params)
-        r.raise_for_status()
-        print(f"Webhook set: {WEBHOOK_URL} -> {r.json()}")
+        print("Webhook set:", r.json())
     except Exception as e:
-        print(f"Failed to set webhook: {e}")
+        print("Set webhook error:", e)
 
-    # Chạy Flask song song với loop Telegram
-    threading.Thread(target=lambda: loop.run_forever(), daemon=True).start()
-    app.run(host="0.0.0.0", port=PORT)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)

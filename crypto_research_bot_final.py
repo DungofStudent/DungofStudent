@@ -1102,7 +1102,7 @@ def suggest_grid_future(price: float, support: Optional[float] = None, resistanc
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot OKX đã sẵn sàng!")
 
-application.add_handler(CommandHandler("start", start_command))
+application.add_handler(CommandHandler("start", start_handler))
 
 async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """

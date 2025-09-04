@@ -90,13 +90,13 @@ app = Application.builder() \
 # ================== Fake web for background worker=========================
 app = Flask(__name__)
 
-@app.route("/healthz")
-def health():
-    return "ok", 200
+@app.route("/")
+def home():
+    return "Bot is running!"
 
-def run_flask():
-    app.run(host="0.0.0.0", port=10000)
-
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
 # Chạy Flask song song với bot Telegram
 threading.Thread(target=run_flask, daemon=True).start()
 

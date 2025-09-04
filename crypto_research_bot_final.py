@@ -87,17 +87,6 @@ app = Application.builder() \
     .connect_timeout(30) \
     .read_timeout(30) \
     .build()
-# ================== Fake web for background worker=========================
-
-
-@app.route("/")
-def home():
-    return "Bot is running!"
-
-@app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put(update)
 
 # ================== GLOBAL STATE ==================
 COINS_LIST = []
@@ -110,12 +99,15 @@ ALERT_THRESHOLD = 4.0  # % change between checks to alert
 MIN_QUOTE_VOL = 10_000_000  # USDT, 24h quote volume filter (liquidity floor)
 MAX_SCAN = 200  # max instruments to scan from OKX
 
-app = Flask(__name__)TOKEN = os.getenv("BOT_TOKEN")  # Đặt trong Render → Environment Variables
+TOKEN = os.getenv("BOT_TOKEN")  # Đặt trong Render → Environment Variables
 PORT = int(os.getenv("PORT", 8080))
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 
+# Flask app
 app = Flask(__name__)
+
+# Telegram Application
 application = Application.builder().token(TOKEN).build()
 
 # Flow detection globals
@@ -150,6 +142,15 @@ last_sent = None
 
 alerts = {}
 
+# ================== Fake web for background worker=========================
+@app.route("/")
+def home():
+    return "Bot is running!"
+
+@app.route(WEBHOOK_PATH, methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put(update)
 
 
 # === Support/Resistance & scoring helpers (simplified) ===

@@ -1875,8 +1875,9 @@ def main():
 
     app.run_polling()
 
-
 if __name__ == "__main__":
+    print("🚀 Starting bot in polling mode...")
+    application.run_polling()
     # Khởi tạo & start application
     loop.run_until_complete(application.initialize())
     loop.run_until_complete(application.start())

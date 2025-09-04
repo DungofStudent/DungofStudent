@@ -1863,10 +1863,17 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-	import requests
+    if __name__ == "__main__":
+    # Đặt webhook cho Telegram
     set_url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
-    resp = requests.post(set_url, data={"url": WEBHOOK_URL})
-    print("Set webhook result:", resp.json())
+    params = {"url": WEBHOOK_URL}
+    try:
+        r = requests.get(set_url, params=params)
+        r.raise_for_status()
+        print(f"Webhook set: {WEBHOOK_URL} -> {r.json()}")
+    except Exception as e:
+        print(f"Failed to set webhook: {e}")
 
+    # Chạy Flask server để Render giữ service luôn sống
     app.run(host="0.0.0.0", port=PORT)
     main()

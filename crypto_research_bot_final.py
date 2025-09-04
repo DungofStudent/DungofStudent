@@ -147,23 +147,7 @@ alerts = {}
 @flask_app.route("/")
 def home():
     return "✅ Bot is running with Flask + Polling!"
-
-@app.route(WEBHOOK_PATH, methods=["POST"])
-def webhook():
-    try:
-        data = request.get_json(force=True)
-        update = Update.de_json(data, application.bot)
-
-        # Đưa update vào Telegram application
-        asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
-
-    except Exception as e:
-        app.logger.error(f"Webhook error: {e}", exc_info=True)
-        return "error", 500
-
-    return "ok", 200
-
-
+	
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
     """

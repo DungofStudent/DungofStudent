@@ -147,24 +147,16 @@ alerts = {}
 @app.route("/")
 def home():
     return "Bot is running!"
-
+	
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
-
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        loop.create_task(application.process_update(update))
-
-        return "ok", 200
+        asyncio.run(application.process_update(update))
     except Exception as e:
-        logger.exception(f"Webhook error: {e}")
+        logger.error(f"Webhook error: {e}")
         return "error", 500
+    return "ok", 200
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -1891,4 +1883,3 @@ if __name__ == "__main__":
 
     # Chạy Flask server để Render giữ service luôn sống
     app.run(host="0.0.0.0", port=PORT)
-    main()

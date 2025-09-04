@@ -1,6 +1,6 @@
-numpy==2.2.0 --only-binary=:all:
-pandas==2.2.3 --only-binary=:all:
-matplotlib==3.9.2
+numpy>=1.24,<2.2
+pandas>=2.0,<2.3
+matplotlib>=3.7,<3.10
 pandas-ta==0.4.67b0
 python-telegram-bot==20.8
 python-dotenv==1.0.1
@@ -9,3 +9,4 @@ apscheduler==3.10.4
 openai==1.51.2
 Flask==3.0.3
 groq
+

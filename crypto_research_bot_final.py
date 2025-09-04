@@ -107,14 +107,13 @@ WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 
 # Flask app
 app = Flask(__name__)
+
 # Telegram Application
 application = Application.builder().token(TOKEN).build()
-asyncio.get_event_loop().run_until_complete(application.initialize())
 
+# Tạo loop riêng cho Telegram
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
-# Initialize Telegram Application
-loop.run_until_complete(application.initialize())
 
 # Flow detection globals
 LAST_HOURLY_INFLOW_ALERT = {}   # key: coin -> datetime of last hourly inflow alert
@@ -148,18 +147,18 @@ last_sent = None
 
 alerts = {}
 
-# ================== Fake web for background worker=========================
+# ================== Flask routes =====================
 @app.route("/")
 def home():
-    return "Bot is running!"
-	
+    return "✅ Bot is running with Flask + Webhook!"
+
 @app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
     try:
         data = request.get_json(force=True)
         update = Update.de_json(data, application.bot)
 
-        # Gửi task vào loop global
+        # Đưa update vào Telegram application
         asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
 
     except Exception as e:
@@ -167,6 +166,7 @@ def webhook():
         return "error", 500
 
     return "ok", 200
+
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -1123,7 +1123,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Bot OKX đã sẵn sàng!")
 
 application.add_handler(CommandHandler("start", start_command))
-
 
 async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """

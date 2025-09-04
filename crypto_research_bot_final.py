@@ -107,16 +107,14 @@ WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 
 # Flask app
 app = Flask(__name__)
-
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
-# Initialize Telegram Application
-loop.run_until_complete(application.initialize())
-
 # Telegram Application
 application = Application.builder().token(TOKEN).build()
 asyncio.get_event_loop().run_until_complete(application.initialize())
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+# Initialize Telegram Application
+loop.run_until_complete(application.initialize())
 
 # Flow detection globals
 LAST_HOURLY_INFLOW_ALERT = {}   # key: coin -> datetime of last hourly inflow alert

@@ -99,7 +99,7 @@ ALERT_THRESHOLD = 4.0  # % change between checks to alert
 MIN_QUOTE_VOL = 10_000_000  # USDT, 24h quote volume filter (liquidity floor)
 MAX_SCAN = 200  # max instruments to scan from OKX
 
-TOKEN = os.getenv("BOT_TOKEN")  # Đặt trong Render → Environment Variables
+TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Variables
 PORT = int(os.getenv("PORT", 8080))
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"

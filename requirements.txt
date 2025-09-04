@@ -1,4 +1,4 @@
-numpy==1.26.4 --only-binary=:all:
+numpy==2.2.0 --only-binary=:all:
 pandas==2.2.2 --only-binary=:all:
 matplotlib==3.9.2
 pandas-ta==0.3.14b0

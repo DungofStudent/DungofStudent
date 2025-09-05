@@ -274,18 +274,47 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
 # ================== OKX HELPERS ==================
+import os
+import requests
+import time
+import logging
+
+logger = logging.getLogger(__name__)
+
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
+    """
+    Gọi API OKX, tự động thêm headers (User-Agent, Referer, Accept-Language).
+    Nếu có đặt API key trong .env (OKX_API_KEY, OKX_API_SECRET, OKX_API_PASSPHRASE),
+    thì sẽ gửi kèm để tránh bị block.
+    """
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/119.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+        "Referer": "https://www.okx.com/",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    # Nếu user có đặt API key trong môi trường thì thêm vào headers
+    api_key = os.getenv("OKX_API_KEY")
+    api_secret = os.getenv("OKX_API_SECRET")   # có thể cần nếu bạn dùng private API
+    api_passphrase = os.getenv("OKX_API_PASSPHRASE")
+
+    if api_key:
+        headers["OK-ACCESS-KEY"] = api_key
+        if api_passphrase:
+            headers["OK-ACCESS-PASSPHRASE"] = api_passphrase
+        # Lưu ý: với public API không cần ký request → không cần secret
+
     try:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/119.0.0.0 Safari/537.36"
-            ),
-            "Accept": "application/json",
-            "Referer": "https://www.okx.com/"
-        }
         r = requests.get(url, params=params, headers=headers, timeout=timeout)
+        if r.status_code == 403:
+            logger.warning("403 Forbidden → thử lại sau 2s...")
+            time.sleep(2)
+            r = requests.get(url, params=params, headers=headers, timeout=timeout)
         r.raise_for_status()
         j = r.json()
         if j.get("code") not in (None, "0"):
@@ -294,7 +323,7 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
     except Exception as e:
         logger.exception(f"OKX request error: {url} {params} {e}")
         return {}
-
+		
 def refresh_markets(limit: int = MAX_SCAN):
     """
     Populate MARKET_MAP with SWAP USDT instruments, prioritizing by 24h quote volume.

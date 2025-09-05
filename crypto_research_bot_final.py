@@ -27,6 +27,8 @@ from io import BytesIO
 import datetime as dt
 import html
 import base64, hmac, hashlib
+import datetime
+
 
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
@@ -605,7 +607,7 @@ def okx_get_json_signed(endpoint: str, params=None, method="GET"):
         body = json.dumps(params)
 
 
-    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     prehash = f"{timestamp}{method.upper()}{path}{query}{body}"
     sign = hmac.new(
         os.getenv("OKX_API_SECRET").encode(),

@@ -2068,29 +2068,31 @@ def main():
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     app.add_handler(CallbackQueryHandler(callback_handler))
-    logger.info("Bot polling...")
+    logger.info("Bot webhook...")
 
     # Background job every 60s
     app.job_queue.run_repeating(background_price_checker, interval=60, first=5)
-	webhook_url = f"https://{render_url}/{TELEGRAM_TOKEN}"
+
+    # Webhook URL cho Render
+    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_URL', 'your-app.onrender.com')}/{TELEGRAM_TOKEN}"
     print(f"🔗 Setting webhook to: {webhook_url}")
 
-    # Start bot polling
+    # Start bot bằng webhook
     app.run_webhook(
         listen="0.0.0.0",
         port=int(os.environ.get("PORT", 8080)),
         url_path=TELEGRAM_TOKEN,
-        webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_URL', 'your-app.onrender.com')}/{TELEGRAM_TOKEN}"
+        webhook_url=webhook_url
     )
 
 
 if __name__ == "__main__":
-    # Flask server để Render giữ app sống
+    # Flask server để Render giữ app sống (nếu bạn dùng Flask để healthcheck)
     threading.Thread(
         target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
         daemon=True
     ).start()
 
-    # Bot chạy bằng polling
-    print("🚀 Starting bot in polling mode...")
+    print("🚀 Starting bot in webhook mode...")
     main()
+

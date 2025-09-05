@@ -352,35 +352,32 @@ def refresh_markets(limit: int = MAX_SCAN):
     except Exception:
         logger.exception("refresh_markets error")
 
-def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, headers: dict | None = None):
-    default_headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept": "application/json",
-        "Referer": "https://www.okx.com/",
+def okx_get_json(url: str, params=None, timeout: int = 15):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+        "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.okx.com/",
+        "Origin": "https://www.okx.com",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
+        "Connection": "keep-alive",
     }
-    if headers:
-        default_headers.update(headers)
-
     try:
-        for attempt in range(3):
-            r = requests.get(url, params=params, headers=default_headers, timeout=timeout)
+        for attempt in range(5):
+            r = requests.get(url, params=params, headers=headers, timeout=timeout)
             if r.status_code == 403:
                 wait = 2 ** attempt
                 logger.warning(f"403 Forbidden → thử lại sau {wait}s...")
                 time.sleep(wait)
                 continue
             r.raise_for_status()
-            j = r.json()
-            if j.get("code") not in (None, "0"):
-                logger.warning(f"OKX non-zero code: {j}")
-            return j
+            return r.json()
         return {}
     except Exception as e:
         logger.exception(f"OKX request error: {url} {params} {e}")
         return {}
+
 
 def get_ohlc_okx(symbol: str, bar="15m", limit=100):
     """

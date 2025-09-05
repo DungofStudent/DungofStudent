@@ -279,9 +279,9 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
                 "Chrome/119.0.0.0 Safari/537.36"
             ),
             "Accept": "application/json",
-            "Referer": "https://www.okx.com/",
+            "Referer": "https://www.okx.com/"
         }
-        r = requests.get(url, params=params, headers=headers, timeout=timeout)  # <-- thêm headers
+        r = requests.get(url, params=params, headers=headers, timeout=timeout)
         r.raise_for_status()
         j = r.json()
         if j.get("code") not in (None, "0"):

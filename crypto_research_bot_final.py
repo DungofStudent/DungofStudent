@@ -1721,10 +1721,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await safe_send(context.bot,chat_id=chat_id, text=text)
 
-
+import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
     global last_sent
-    utcnow = datetime.now(timezone.utc)
+    utcnow = dt.datetime.now(dt.timezone.utc)
+
 
 # Khi gán last_sent cũng phải dùng aware datetime
     if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:

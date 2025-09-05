@@ -35,7 +35,6 @@ from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 from flask import Flask, request
 from urllib.parse import urlencode
-from telegram.ext import Application
 import asyncio
 
 from telegram import Bot

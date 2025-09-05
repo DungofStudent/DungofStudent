@@ -26,6 +26,7 @@ import time
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 import html
+import base64, hmac, hashlib
 
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
@@ -308,17 +309,28 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
 def refresh_markets(limit: int = MAX_SCAN):
     """
     Populate MARKET_MAP with SWAP USDT instruments, prioritizing by 24h quote volume.
-    We fetch both instrument meta and tickers to get current price + 24h volumes.
+    Thử gọi public API, nếu fail thì fallback sang signed request (API key).
     """
     try:
-        # 1) Instruments (SWAP)
-        url_inst = "https://www.okx.com/api/v5/public/instruments"
-        inst_j = okx_get_json(url_inst, {"instType": "SWAP"})
-        data = inst_j.get("data", []) if inst_j else []
-        # 2) Tickers (SWAP)
-        url_tickers = "https://www.okx.com/api/v5/market/tickers"
-        tick_j = okx_get_json(url_tickers, {"instType": "SWAP"})
-        tickers = tick_j.get("data", []) if tick_j else []
+        # --- fetch instruments ---
+        url_inst = "/api/v5/public/instruments"
+        try:
+            inst_j = okx_get_json("https://www.okx.com" + url_inst, {"instType": "SWAP"})
+            data = inst_j.get("data", []) if inst_j else []
+        except Exception:
+            logger.warning("Public instruments API fail → dùng signed")
+            inst_j = okx_get_json_signed(url_inst, {"instType": "SWAP"})
+            data = inst_j.get("data", []) if inst_j else []
+
+        # --- fetch tickers ---
+        url_tickers = "/api/v5/market/tickers"
+        try:
+            tick_j = okx_get_json("https://www.okx.com" + url_tickers, {"instType": "SWAP"})
+            tickers = tick_j.get("data", []) if tick_j else []
+        except Exception:
+            logger.warning("Public tickers API fail → dùng signed")
+            tick_j = okx_get_json_signed(url_tickers, {"instType": "SWAP"})
+            tickers = tick_j.get("data", []) if tick_j else []
 
         # Map tickers by instId for quick join
         tick_map = {t.get("instId"): t for t in tickers}
@@ -326,20 +338,20 @@ def refresh_markets(limit: int = MAX_SCAN):
         out = {}
         for item in data:
             inst_id = item.get("instId", "")
-            # We want *USDT-SWAP* only
+            # chỉ lấy *USDT-SWAP*
             if not inst_id.endswith("USDT-SWAP"):
                 continue
 
             base = item.get("uly")  # underlying (e.g., BTC-USDT)
             if not base or not base.endswith("USDT"):
                 continue
-            coin_id = base  # e.g., BTC-USDT (without -SWAP)
+            coin_id = base  # e.g., BTC-USDT (không có -SWAP)
 
             t = tick_map.get(inst_id, {})
-            # OKX fields: last, bidPx, askPx, vol24h, volCcy24h, high24h, low24h, sodUtc8
             last = t.get("last")
-            vol_quote = t.get("volCcy24h")  # quote currency volume (USDT)
-            vol_base = t.get("vol24h")      # base volume (contracts)
+            vol_quote = t.get("volCcy24h")  # khối lượng USDT
+            vol_base = t.get("vol24h")      # khối lượng coin
+
             try:
                 last = float(last) if last is not None else None
             except:
@@ -363,14 +375,16 @@ def refresh_markets(limit: int = MAX_SCAN):
                 "vol_base_24h": vol_base,
             }
 
-        # keep only liquid instruments and take top `limit` by vol_quote_24h
+        # keep only liquid instruments
         liquid = sorted(out.values(), key=lambda x: x.get("vol_quote_24h", 0.0), reverse=True)
-        liquid = [x for x in liquid if x.get("vol_quote_24h", 0.0) >= 0]  # keep all; volume filter later
+        liquid = [x for x in liquid if x.get("vol_quote_24h", 0.0) >= 0]
         liquid = liquid[:limit]
+
         # finalize maps
         global MARKET_MAP, COINS_LIST
         MARKET_MAP = {f"{x['base']}-USDT": x for x in liquid}
         COINS_LIST = list(MARKET_MAP.keys())
+
         logger.info(f"Refreshed markets: {len(COINS_LIST)} USDT SWAP coins (top by 24h quote vol)")
 
     except Exception:
@@ -560,6 +574,60 @@ def fetch_okx_with_key(url, params=None, api_key="", api_pass="", api_secret="")
     r.raise_for_status()
     return r.json()
 
+import base64, hmac, hashlib, time, datetime, os
+import requests
+
+def okx_sign_request(method: str, path: str, body: str = ""):
+    """Tạo headers với chữ ký OKX cho request private."""
+    api_key = os.getenv("OKX_API_KEY")
+    secret_key = os.getenv("OKX_API_SECRET")
+    passphrase = os.getenv("OKX_API_PASSPHRASE")
+
+    if not (api_key and secret_key and passphrase):
+        return {}
+
+    # timestamp dạng 2025-09-05T03:30:00.000Z
+    timestamp = datetime.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
+
+    # message cần ký
+    prehash = f"{timestamp}{method.upper()}{path}{body}"
+    sign = hmac.new(
+        secret_key.encode("utf-8"),
+        prehash.encode("utf-8"),
+        hashlib.sha256
+    ).digest()
+    sign_b64 = base64.b64encode(sign).decode()
+
+    return {
+        "OK-ACCESS-KEY": api_key,
+        "OK-ACCESS-SIGN": sign_b64,
+        "OK-ACCESS-TIMESTAMP": timestamp,
+        "OK-ACCESS-PASSPHRASE": passphrase,
+        "Content-Type": "application/json"
+    }
+
+def okx_get_json_signed(endpoint: str, params=None, method="GET"):
+    """
+    Gọi API OKX với ký request (dùng cho private hoặc public khi bị 403).
+    endpoint: VD "/api/v5/market/tickers"
+    """
+    base_url = "https://www.okx.com"
+    path = endpoint
+    body = ""
+    if params and method == "GET":
+        # build query string
+        from urllib.parse import urlencode
+        qs = urlencode(params)
+        path = f"{endpoint}?{qs}"
+    elif params and method == "POST":
+        import json
+        body = json.dumps(params)
+
+    headers = okx_sign_request(method, endpoint, body)
+    url = base_url + path
+    r = requests.request(method, url, headers=headers, data=body)
+    r.raise_for_status()
+    return r.json()
 
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):

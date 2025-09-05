@@ -309,38 +309,25 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
 def refresh_markets(limit: int = MAX_SCAN):
     """
     Populate MARKET_MAP with SWAP USDT instruments, prioritizing by 24h quote volume.
-    Thử gọi public API trước, nếu fail thì fallback sang signed API.
+    Dùng public API, có thêm headers để tránh 403.
     """
     try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json"
+        }
+
         # --- fetch instruments ---
-        data = []
-        try:
-            inst_j = okx_get_json("https://www.okx.com/api/v5/public/instruments", {"instType": "SWAP"})
-            data = inst_j.get("data", []) if inst_j else []
-            if not data:
-                logger.warning("Public instruments API trả rỗng → fallback signed")
-                inst_j = okx_get_json_signed("/api/v5/public/instruments", {"instType": "SWAP"})
-                data = inst_j.get("data", []) if inst_j else []
-        except Exception:
-            logger.warning("Public instruments API lỗi → fallback signed")
-            inst_j = okx_get_json_signed("/api/v5/public/instruments", {"instType": "SWAP"})
-            data = inst_j.get("data", []) if inst_j else []
+        inst_j = okx_get_json("https://www.okx.com/api/v5/public/instruments",
+                              {"instType": "SWAP"}, headers=headers)
+        data = inst_j.get("data", []) if inst_j else []
 
         # --- fetch tickers ---
-        tickers = []
-        try:
-            tick_j = okx_get_json("https://www.okx.com/api/v5/market/tickers", {"instType": "SWAP"})
-            tickers = tick_j.get("data", []) if tick_j else []
-            if not tickers:
-                logger.warning("Public tickers API trả rỗng → fallback signed")
-                tick_j = okx_get_json_signed("/api/v5/market/tickers", {"instType": "SWAP"})
-                tickers = tick_j.get("data", []) if tick_j else []
-        except Exception:
-            logger.warning("Public tickers API lỗi → fallback signed")
-            tick_j = okx_get_json_signed("/api/v5/market/tickers", {"instType": "SWAP"})
-            tickers = tick_j.get("data", []) if tick_j else []
+        tick_j = okx_get_json("https://www.okx.com/api/v5/market/tickers",
+                              {"instType": "SWAP"}, headers=headers)
+        tickers = tick_j.get("data", []) if tick_j else []
 
-        # Map tickers by instId for quick join
+        # Map tickers by instId
         tick_map = {t.get("instId"): t for t in tickers}
 
         out = {}
@@ -352,12 +339,12 @@ def refresh_markets(limit: int = MAX_SCAN):
             base = item.get("uly")  # underlying (e.g., BTC-USDT)
             if not base or not base.endswith("USDT"):
                 continue
-            coin_id = base  # e.g., BTC-USDT
+            coin_id = base
 
             t = tick_map.get(inst_id, {})
             last = t.get("last")
-            vol_quote = t.get("volCcy24h")  # volume in quote (USDT)
-            vol_base = t.get("vol24h")      # base volume
+            vol_quote = t.get("volCcy24h")
+            vol_base = t.get("vol24h")
 
             try:
                 last = float(last) if last is not None else None
@@ -382,11 +369,11 @@ def refresh_markets(limit: int = MAX_SCAN):
                 "vol_base_24h": vol_base,
             }
 
-        # keep only liquid instruments and take top `limit` by vol_quote_24h
+        # top theo volume
         liquid = sorted(out.values(), key=lambda x: x.get("vol_quote_24h", 0.0), reverse=True)
         liquid = liquid[:limit]
 
-        # finalize maps
+        # finalize
         global MARKET_MAP, COINS_LIST
         MARKET_MAP = {f"{x['base']}-USDT": x for x in liquid}
         COINS_LIST = list(MARKET_MAP.keys())
@@ -397,28 +384,20 @@ def refresh_markets(limit: int = MAX_SCAN):
         logger.exception("refresh_markets error")
 
 
+
 def get_ohlc_okx(symbol: str, bar: str = "15m", limit: int = 200):
     """
-    Fetch OHLC data (candles) từ OKX.
-    Thử gọi public API trước, nếu lỗi hoặc rỗng thì fallback sang signed API.
+    Fetch OHLC data (candles) từ OKX (chỉ dùng public endpoint).
     """
     try:
         inst_id = f"{symbol}-SWAP"
-        endpoint = "/api/v5/market/candles"
+        url = "https://www.okx.com/api/v5/market/candles"
         params = {"instId": inst_id, "bar": bar, "limit": limit}
 
-        j = None
-        try:
-            j = okx_get_json("https://www.okx.com" + endpoint, params)
-            if not j or not j.get("data"):
-                logger.warning(f"Public candles API rỗng → fallback signed {inst_id}")
-                j = okx_get_json_signed(endpoint, params)
-        except Exception:
-            logger.warning(f"Public candles API lỗi → fallback signed {inst_id}")
-            j = okx_get_json_signed(endpoint, params)
-
+        j = okx_get_json(url, params)
         data = j.get("data", []) if j else []
         if not data:
+            logger.warning(f"Candles API trả rỗng {inst_id}")
             return None
 
         import pandas as pd

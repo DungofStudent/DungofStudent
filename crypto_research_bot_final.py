@@ -292,6 +292,9 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for chunk in split_message(final_text):
         await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
+async def error_handler(update, context):
+    logger.error("Update %s gây lỗi %s", update, context.error)
+
 # ================== OKX HELPERS ==================
 def refresh_markets(limit: int = 50):
     try:
@@ -2061,6 +2064,7 @@ def main():
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     app.add_handler(CallbackQueryHandler(callback_handler))
+	app.add_error_handler(error_handler)
     logger.info("Bot polling...")
 
     # Background job every 60s

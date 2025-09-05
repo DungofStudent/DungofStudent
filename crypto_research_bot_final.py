@@ -24,7 +24,7 @@ import logging
 import threading
 import time
 from io import BytesIO
-from datetime import datetime, timedelta, timezone
+import datetime as dt
 import html
 import base64, hmac, hashlib
 
@@ -120,8 +120,8 @@ asyncio.set_event_loop(loop)
 # Flow detection globals
 LAST_HOURLY_INFLOW_ALERT = {}   # key: coin -> datetime of last hourly inflow alert
 LAST_IMMEDIATE_OUTFLOW_ALERT = {}  # key: coin -> datetime of last immediate outflow alert (cooldown short)
-HOURLY_INFLOW_COOLDOWN = timedelta(hours=1)
-IMMEDIATE_OUTFLOW_COOLDOWN = timedelta(minutes=10)
+HOURLY_INFLOW_COOLDOWN = dt.timedelta(hours=1)
+IMMEDIATE_OUTFLOW_COOLDOWN = dt.timedelta(minutes=10)
 
 # thresholds (tuneable)
 INFLOW_VOL_MULTIPLIER = 3.0   # nếu vol(1H) >= mean(prev 24 x 1H) * 3 -> inflow mạnh
@@ -130,14 +130,14 @@ OUTFLOW_PRICE_DROP_PCT = -2.0 # trong 1h giảm <= -2% kèm vol spike -> outflow
 
 LAST_NEWS_IDS = set()             # store unique identifiers (urls or titles) already sent
 LAST_NEWS_HOUR = None             # last time hourly market news was broadcast (UTC)
-NEWS_HOURLY_COOLDOWN = timedelta(hours=1)
+NEWS_HOURLY_COOLDOWN = dt.timedelta(hours=1)
 
 # Flow alert dedupe: key = (coin, timeframe, type) -> datetime
 LAST_FLOW_ALERTS = {}
 
 # Timeframes priority for immediate alerts (prefer short timeframes)
 FLOW_TFS = ["3m", "15m", "1H", "4H"]
-FLOW_IMMEDIATE_COOLDOWN = timedelta(minutes=10)  # per (coin,tf,type)
+FLOW_IMMEDIATE_COOLDOWN = dt.timedelta(minutes=10)  # per (coin,tf,type)
 
 # API Key cho CryptoPanic (nếu có), nếu không có thì để trống -> bot sẽ fallback CoinStats
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
@@ -177,7 +177,7 @@ def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
     Trả về (score, trend_type)
     trend_type = 'bullish' | 'bearish'
     """
-    if len(df) < 50:
+    if df is None or len(df) < 50:
         return 0, "neutral"
 
     df = df.copy()
@@ -569,7 +569,7 @@ def fetch_okx_with_key(url, params=None, api_key="", api_pass="", api_secret="")
     r.raise_for_status()
     return r.json()
 
-import base64, hmac, hashlib, time, datetime, os
+import base64, hmac, hashlib, time, os
 import requests
 
 def okx_sign_request(method: str, path: str, body: str = ""):
@@ -582,7 +582,8 @@ def okx_sign_request(method: str, path: str, body: str = ""):
         return {}
 
     # timestamp dạng 2025-09-05T03:30:00.000Z
-    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    timestamp = dt.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
+
     # message cần ký
     prehash = f"{timestamp}{method.upper()}{path}{body}"
     sign = hmac.new(
@@ -600,55 +601,66 @@ def okx_sign_request(method: str, path: str, body: str = ""):
         "Content-Type": "application/json"
     }
 
-def okx_get_json_signed(endpoint: str, params=None, method="GET"):
+def okx_get_json_signed(endpoint: str, params=None, method: str = "GET", timeout: int = 15):
     """
-    Signed request tới OKX API.
+    Gọi API OKX có ký (API key).
+    - endpoint: ví dụ "/api/v5/market/tickers"
+    - params: dict query/body
+    Tự động retry khi 403/5xx, trả {} nếu lỗi.
     """
-    base_url = "https://www.okx.com"
-    body = ""
-    path = endpoint
-
+    import json
     from urllib.parse import urlencode
+
+    base_url = "https://www.okx.com"
+    path = endpoint
     query = ""
-    if params and method == "GET":
+    body = ""
+
+    if method.upper() == "GET" and params:
         query = "?" + urlencode(params)
-    elif params and method == "POST":
-        import json
+    elif method.upper() in ("POST", "PUT") and params is not None:
         body = json.dumps(params)
 
-    # timestamp ISO8601 với ms
-    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-    prehash = f"{timestamp}{method.upper()}{path}{query}{body}"
-    sign = hmac.new(
-        os.getenv("OKX_API_SECRET").encode(),
-        prehash.encode(),
-        hashlib.sha256
-    ).digest()
-    sign_b64 = base64.b64encode(sign).decode()
-
-    headers = {
-        "OK-ACCESS-KEY": os.getenv("OKX_API_KEY"),
-        "OK-ACCESS-SIGN": sign_b64,
-        "OK-ACCESS-TIMESTAMP": timestamp,
-        "OK-ACCESS-PASSPHRASE": os.getenv("OKX_API_PASSPHRASE"),
-        "Content-Type": "application/json",
-    }
+    # build headers with OKX auth
+    def _signed_headers(ts: str) -> dict:
+        prehash = f"{ts}{method.upper()}{path}{query}{body}"
+        sign = hmac.new(os.getenv("OKX_API_SECRET", "").encode(), prehash.encode(), hashlib.sha256).digest()
+        sign_b64 = base64.b64encode(sign).decode()
+        return {
+            "OK-ACCESS-KEY": os.getenv("OKX_API_KEY", ""),
+            "OK-ACCESS-SIGN": sign_b64,
+            "OK-ACCESS-TIMESTAMP": ts,
+            "OK-ACCESS-PASSPHRASE": os.getenv("OKX_API_PASSPHRASE", ""),
+            "Content-Type": "application/json",
+            # Một số endpoint market vẫn cho public nhưng thêm UA giúp giảm 403
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+            "Referer": "https://www.okx.com/",
+        }
 
     url = base_url + path + query
 
     for attempt in range(3):
-        r = requests.request(method, url, headers=headers, data=body, timeout=15)
-        if r.status_code == 403:
-            wait = 2 ** attempt
-            logger.warning(f"403 Forbidden (signed) → thử lại sau {wait}s...")
-            time.sleep(wait)
-            continue
-        r.raise_for_status()
-        return r.json()
+        try:
+            ts = dt.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
+            headers = _signed_headers(ts)
+            r = requests.request(method.upper(), url, headers=headers, data=body, timeout=timeout)
+            if r.status_code in (403, 429, 500, 502, 503, 504):
+                wait = 2 ** attempt
+                logger.warning(f"Signed request {url} → {r.status_code}. Thử lại sau {wait}s...")
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            j = r.json()
+            if isinstance(j, dict) and j.get("code") not in (None, "0"):
+                logger.warning(f"OKX signed non-zero code: {j}")
+            return j
+        except Exception as e:
+            logger.exception(f"OKX signed request error: {url} {params} {e}")
+            time.sleep(2 ** attempt)
     return {}
-
-def get_ticker_okx(inst: str):
+def 
+get_ticker_okx(inst: str):
     """
     Lấy ticker cho 1 instrument.
     """
@@ -706,7 +718,7 @@ async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
         return None
 
     coin = symbol.upper()
-    now = datetime.now(timezone.utc)
+    now = dt.datetime.now(dt.timezone.utc)
 
     last_row = df.iloc[-1]
     prev_row = df.iloc[-2]
@@ -832,11 +844,11 @@ async def safe_edit(message, text, **kwargs):
 # ================== NEWS API ==================
 LAST_NEWS_CACHE = []
 LAST_NEWS_FETCH = None
-NEWS_CACHE_TTL = timedelta(minutes=35) 
+NEWS_CACHE_TTL = dt.timedelta(minutes=35) 
 
 def get_news_general(limit: int = 5):
     global LAST_NEWS_CACHE, LAST_NEWS_FETCH
-    now = datetime.now()
+    now = dt.datetime.now()
 
     # Nếu cache còn hạn thì trả về cache
     if LAST_NEWS_FETCH and (now - LAST_NEWS_FETCH) < NEWS_CACHE_TTL:
@@ -942,7 +954,7 @@ def get_news_today(limit: int = 10):
         r.raise_for_status()
         j = r.json()
         articles = j.get("news", [])
-        today = datetime.utcnow().date()
+        today = dt.datetime.utcnow().date()
         out = []
         for a in articles:
             title = a.get("title", "")
@@ -1017,6 +1029,8 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
     - RSI position (bullish: 50-70; bearish: 30-50)
     - ADX strength (>20)
     """
+    if df is None:
+        return 0.0, {}
     if df.empty or len(df) < 50:
         return 0.0, {}
     inds = _indicators(df)
@@ -1358,10 +1372,10 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for coin in coins:
         try:
             # fetch candles for multiple timeframes
-            df15 = await get_ohlc_okx(coin, bar="15m", limit=200)
-            df1h = await get_ohlc_okx(coin, bar="1H", limit=200)
-            df4h = await get_ohlc_okx(coin, bar="4H", limit=200)
-            df1d = await get_ohlc_okx(coin, bar="1D", limit=200)
+            df15 = get_ohlc_okx(coin, bar="15m", limit=200)
+            df1h = get_ohlc_okx(coin, bar="1H", limit=200)
+            df4h = get_ohlc_okx(coin, bar="4H", limit=200)
+            df1d = get_ohlc_okx(coin, bar="1D", limit=200)
 
             price = None
             if not df1h.empty:
@@ -1495,8 +1509,8 @@ async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     coin = args[0].upper()
     # fetch price + SR D1
-    df1h = await get_ohlc_okx(coin, bar="1H", limit=200)
-    df1d = await get_ohlc_okx(coin, bar="1D", limit=200)
+    df1h = get_ohlc_okx(coin, bar="1H", limit=200)
+    df1d = get_ohlc_okx(coin, bar="1D", limit=200)
     price = None
     if not df1h.empty:
         price = float(df1h.iloc[-1]["close"])
@@ -1834,7 +1848,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                 text = "📰 Tin tức thị trường (mới):\n\n" + "\n\n".join(new_articles)
                 for chat in list(ALERT_CHAT_IDS):
                     try:
-                        await safe_send(context.bot,id=chat, text=text)
+                        await safe_send(context.bot,chat_id=chat, text=text)
                     except Exception:
                         logger.exception("Failed to send hourly market news")
             LAST_NEWS_HOUR = utcnow
@@ -1852,7 +1866,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                 change = ((price - old) / old) * 100.0
                 if abs(change) >= ALERT_THRESHOLD:
                     last = LAST_ALERT.get(cid)
-                    if not last or (utcnow - last) >= timedelta(minutes=8):
+                    if not last or (utcnow - last) >= dt.timedelta(minutes=8):
                         LAST_ALERT[cid] = utcnow
                         # compute short timeframe score
                         df15 = get_ohlc_okx(cid, bar="15m", limit=200)
@@ -1864,7 +1878,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                         )
                         for chat in list(ALERT_CHAT_IDS):
                             try:
-                                await safe_send(context.bot,id=chat, text=msg)
+                                await safe_send(context.bot,chat_id=chat, text=msg)
                             except Exception:
                                 logger.exception("Failed to send price change alert")
 
@@ -1897,7 +1911,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                     )
                 for chat in list(ALERT_CHAT_IDS):
                     try:
-                        await safe_send(context.bot,id=chat, text=msg)
+                        await safe_send(context.bot,chat_id=chat, text=msg)
                     except Exception:
                         logger.exception("Failed to send 15m flow alert")
     except Exception:

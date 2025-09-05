@@ -28,12 +28,14 @@ import datetime as dt
 import html
 import base64, hmac, hashlib
 import datetime
+from telegram.request import HTTPXRequest
 
 
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
 from flask import Flask, request
 from urllib.parse import urlencode
+from telegram.ext import Application
 import asyncio
 
 from telegram import Bot
@@ -91,11 +93,15 @@ if not TELEGRAM_TOKEN:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crypto_bot_opt")
 
+request = HTTPXRequest(
+    connect_timeout=30,
+    read_timeout=30,
+    request_timeout=30
+)
+
 app = Application.builder() \
     .token(TELEGRAM_TOKEN) \
-    .connect_timeout(30) \
-    .read_timeout(30) \
-    .request_timeout(30) \
+    .request(request) \
     .build()
 
 # ================== GLOBAL STATE ==================

@@ -275,7 +275,7 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0; +https://github.com/DungofStudent)"
         }
-        r = requests.get(url, params=params, timeout=timeout)
+        r = requests.get(url, params=params, headers=headers, timeout=timeout)  # <-- thêm headers vào
         r.raise_for_status()
         j = r.json()
         if j.get("code") not in (None, "0"):

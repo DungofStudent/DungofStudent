@@ -12,6 +12,7 @@
 #   - This file is a drop-in replacement for your current bot. API endpoints are OKX public endpoints.
 #
 # Author: ChatGPT (GPT-5 Thinking)
+#!/usr/bin/env python3
 
 import os
 import requests
@@ -21,13 +22,19 @@ import pandas_ta as ta
 import matplotlib.pyplot as plt
 import logging
 import threading
+import time
 from io import BytesIO
-from datetime import datetime, timedelta, timezone
+import datetime as dt
+import html
+import base64, hmac, hashlib
 
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
-from flask import Flask
-from groq import Groq
+from flask import Flask, request
+import asyncio
+
+from telegram import Bot
+from telegram.ext import Application
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -37,56 +44,55 @@ from telegram.ext import (
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
 
-#=================== Hàm AI tóm tắt tin tức bằng Groq LLM============
-import os
-from groq import Groq
+OKX_BASE = "https://www.okx.com/api/v5"
+PROXY = None 
 
+#=================== Hàm AI tóm tắt tin tức bằng Groq LLM==============
+from groq import Groq
 def ai_summarize(prompt: str) -> str:
-    """
-    Tóm tắt tin tức crypto bằng Groq LLM.
-    Cần set biến môi trường GROQ_API_KEY trong Railway.
-    """
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        return "⚠️ Chưa cấu hình GROQ_API_KEY, không thể gọi AI."
+        return "⚠️ Chưa có GROQ_API_KEY."
 
     try:
         client = Groq(api_key=api_key)
         resp = client.chat.completions.create(
-            model="llama-3.1-8b-instruct",
+            model="llama3-8b-8192",   # dùng model hợp lệ
             messages=[
-                {"role": "system", "content": "Bạn là trợ lý AI, hãy tóm tắt ngắn gọn tin tức crypto."},
+                {
+                    "role": "system",
+                    "content": (
+                        "Bạn là trợ lý AI chuyên tóm tắt và dịch tin tức crypto. "
+                        "Hãy dịch toàn bộ nội dung sang tiếng Việt và tóm tắt ngắn gọn, dễ hiểu."
+                    )
+                },
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=300,
+            max_tokens=400,
             temperature=0.6
         )
         return resp.choices[0].message.content.strip()
     except Exception as e:
         return f"❌ Lỗi Groq API: {e}"
 
+
 # ================== ENV & LOG ==================
 load_dotenv()
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
-    raise RuntimeError("TELEGRAM_TOKEN not found in .env")
+    raise RuntimeError("❌ TELEGRAM_TOKEN not found! Please set it in Railway Variables or .env")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crypto_bot_opt")
 
-# ================== Fake web for background worker=========================
-app = Flask(__name__)
-
-@app.route("/healthz")
-def health():
-    return "ok", 200
-
-def run_flask():
-    app.run(host="0.0.0.0", port=10000)
-
-# Chạy Flask song song với bot Telegram
-threading.Thread(target=run_flask, daemon=True).start()
+app = Application.builder() \
+    .token(TELEGRAM_TOKEN) \
+    .connect_timeout(30) \
+    .read_timeout(30) \
+    .build()
 
 # ================== GLOBAL STATE ==================
 COINS_LIST = []
@@ -98,13 +104,24 @@ ALERT_CHAT_IDS = set()
 ALERT_THRESHOLD = 4.0  # % change between checks to alert
 MIN_QUOTE_VOL = 10_000_000  # USDT, 24h quote volume filter (liquidity floor)
 MAX_SCAN = 200  # max instruments to scan from OKX
-OKX_BASE = "https://aws.okx.com"
+
+TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Variables
+PORT = int(os.getenv("PORT", 8080))
+WEBHOOK_PATH = f"/webhook/{TOKEN}"
+WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
+
+# Flask app
+flask_app = Flask(__name__)
+# Telegram Application
+application = Application.builder().token(TOKEN).build()
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 # Flow detection globals
 LAST_HOURLY_INFLOW_ALERT = {}   # key: coin -> datetime of last hourly inflow alert
 LAST_IMMEDIATE_OUTFLOW_ALERT = {}  # key: coin -> datetime of last immediate outflow alert (cooldown short)
-HOURLY_INFLOW_COOLDOWN = timedelta(hours=1)
-IMMEDIATE_OUTFLOW_COOLDOWN = timedelta(minutes=10)
+HOURLY_INFLOW_COOLDOWN = dt.timedelta(hours=1)
+IMMEDIATE_OUTFLOW_COOLDOWN = dt.timedelta(minutes=10)
 
 # thresholds (tuneable)
 INFLOW_VOL_MULTIPLIER = 3.0   # nếu vol(1H) >= mean(prev 24 x 1H) * 3 -> inflow mạnh
@@ -113,21 +130,29 @@ OUTFLOW_PRICE_DROP_PCT = -2.0 # trong 1h giảm <= -2% kèm vol spike -> outflow
 
 LAST_NEWS_IDS = set()             # store unique identifiers (urls or titles) already sent
 LAST_NEWS_HOUR = None             # last time hourly market news was broadcast (UTC)
-NEWS_HOURLY_COOLDOWN = timedelta(hours=1)
+NEWS_HOURLY_COOLDOWN = dt.timedelta(hours=1)
 
 # Flow alert dedupe: key = (coin, timeframe, type) -> datetime
 LAST_FLOW_ALERTS = {}
 
 # Timeframes priority for immediate alerts (prefer short timeframes)
 FLOW_TFS = ["3m", "15m", "1H", "4H"]
-FLOW_IMMEDIATE_COOLDOWN = timedelta(minutes=10)  # per (coin,tf,type)
+FLOW_IMMEDIATE_COOLDOWN = dt.timedelta(minutes=10)  # per (coin,tf,type)
 
 # API Key cho CryptoPanic (nếu có), nếu không có thì để trống -> bot sẽ fallback CoinStats
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
 
 LAST_ALERT_TIME = {}
+# Biến toàn cục để theo dõi thời gian gửi tin cuối cùng
+last_sent = None
 
+alerts = {}
+# ================== Flask routes =====================
+@flask_app.route("/")
+def home():
+    return "✅ Bot is running with Flask + Polling!"
+	
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
     """
@@ -147,23 +172,46 @@ def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (O
     except Exception:
         return None, None
 
-def compute_trend_score(df: pd.DataFrame, mode: str = "long") -> (float, dict):
+def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
     """
-    Placeholder score: returns a naive strength based on slope of closes.
-    Replace with real indicator computing from your previous file.
+    Trả về (score, trend_type)
+    trend_type = 'bullish' | 'bearish'
     """
-    if df is None or df.empty:
-        return 0.0, {"signal": None}
-    closes = df["close"].astype(float)
-    if len(closes) < 3:
-        return 0.0, {"signal": None}
-    # simple slope percentage over last part
-    start = closes.iloc[0]
-    end = closes.iloc[-1]
-    pct = ((end - start) / start) * 100 if start != 0 else 0.0
-    score = max(0.0, min(100.0, pct * 5 + 50))  # make 0-100
-    signal = "buy" if pct > 0 else "sell"
-    return score, {"signal": signal}
+    if df is None or len(df) < 50:
+        return 0, "neutral"
+
+    df = df.copy()
+    df["ema20"] = df["close"].ewm(span=20).mean()
+    df["ema50"] = df["close"].ewm(span=50).mean()
+
+    # RSI
+    delta = df["close"].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = -delta.where(delta < 0, 0).rolling(14).mean()
+    rs = gain / (loss + 1e-9)
+    df["rsi"] = 100 - (100 / (1 + rs))
+
+    last = df.iloc[-1]
+    score = 0
+
+    if last["ema20"] > last["ema50"]:
+        score += 30
+    else:
+        score -= 30
+
+    if last["rsi"] > 55:
+        score += 30
+    elif last["rsi"] < 45:
+        score -= 30
+
+    if last["close"] > last["ema50"]:
+        score += 40
+    else:
+        score -= 40
+
+    trend_type = "bullish" if score >= 60 else "bearish" if score <= -60 else "neutral"
+    return score, trend_type
+
 
 
 def can_alert(coin: str, cooldown: int = 3600):
@@ -219,72 +267,36 @@ def check_liquidity_strength(df):
     except Exception as e:
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
+async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
+
+    # Chia nhỏ text
+    for chunk in split_message(final_text):
+        await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
 # ================== OKX HELPERS ==================
-OKX_BASE = "https://aws.okx.com"
-
-def okx_get_json(endpoint: str, params: dict | None = None, timeout: int = 15):
-    """
-    Gọi API OKX qua aws.okx.com (ít bị chặn hơn www.okx.com).
-    Tự động fallback sang www.okx.com nếu aws cũng lỗi.
-    """
-    headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0; +https://github.com/DungofStudent)",
-        "Accept": "application/json"
-    }
-    url1 = f"{OKX_BASE}{endpoint}"
-    url2 = url1.replace("aws.okx.com", "www.okx.com")
-
-    for url in (url1, url2):
-        try:
-            r = requests.get(url, params=params, headers=headers, timeout=timeout)
-            r.raise_for_status()
-            j = r.json()
-            if j.get("code") not in (None, "0"):
-                logger.warning(f"OKX non-zero code: {j}")
-            return j
-        except Exception as e:
-            logger.warning(f"OKX request failed {url}: {e}")
-            continue
-    return {}
-
-
-
 def refresh_markets(limit: int = MAX_SCAN):
     """
     Populate MARKET_MAP with SWAP USDT instruments, prioritizing by 24h quote volume.
-    Thử gọi public API trước, nếu fail thì fallback sang signed API.
+    Dùng public API, có thêm headers để tránh 403.
     """
     try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json"
+        }
+
         # --- fetch instruments ---
-        data = []
-        try:
-            inst_j = okx_get_json("https://www.okx.com/api/v5/public/instruments", {"instType": "SWAP"})
-            data = inst_j.get("data", []) if inst_j else []
-            if not data:
-                logger.warning("Public instruments API trả rỗng → fallback signed")
-                inst_j = okx_get_json_signed("/api/v5/public/instruments", {"instType": "SWAP"})
-                data = inst_j.get("data", []) if inst_j else []
-        except Exception:
-            logger.warning("Public instruments API lỗi → fallback signed")
-            inst_j = okx_get_json_signed("/api/v5/public/instruments", {"instType": "SWAP"})
-            data = inst_j.get("data", []) if inst_j else []
+        inst_j = okx_get_json("https://www.okx.com/api/v5/public/instruments",
+                              {"instType": "SWAP"}, headers=headers)
+        data = inst_j.get("data", []) if inst_j else []
 
         # --- fetch tickers ---
-        tickers = []
-        try:
-            tick_j = okx_get_json("https://www.okx.com/api/v5/market/tickers", {"instType": "SWAP"})
-            tickers = tick_j.get("data", []) if tick_j else []
-            if not tickers:
-                logger.warning("Public tickers API trả rỗng → fallback signed")
-                tick_j = okx_get_json_signed("/api/v5/market/tickers", {"instType": "SWAP"})
-                tickers = tick_j.get("data", []) if tick_j else []
-        except Exception:
-            logger.warning("Public tickers API lỗi → fallback signed")
-            tick_j = okx_get_json_signed("/api/v5/market/tickers", {"instType": "SWAP"})
-            tickers = tick_j.get("data", []) if tick_j else []
+        tick_j = okx_get_json("https://www.okx.com/api/v5/market/tickers",
+                              {"instType": "SWAP"}, headers=headers)
+        tickers = tick_j.get("data", []) if tick_j else []
 
-        # Map tickers by instId for quick join
+        # Map tickers by instId
         tick_map = {t.get("instId"): t for t in tickers}
 
         out = {}
@@ -296,12 +308,12 @@ def refresh_markets(limit: int = MAX_SCAN):
             base = item.get("uly")  # underlying (e.g., BTC-USDT)
             if not base or not base.endswith("USDT"):
                 continue
-            coin_id = base  # e.g., BTC-USDT
+            coin_id = base
 
             t = tick_map.get(inst_id, {})
             last = t.get("last")
-            vol_quote = t.get("volCcy24h")  # volume in quote (USDT)
-            vol_base = t.get("vol24h")      # base volume
+            vol_quote = t.get("volCcy24h")
+            vol_base = t.get("vol24h")
 
             try:
                 last = float(last) if last is not None else None
@@ -326,11 +338,11 @@ def refresh_markets(limit: int = MAX_SCAN):
                 "vol_base_24h": vol_base,
             }
 
-        # keep only liquid instruments and take top `limit` by vol_quote_24h
+        # top theo volume
         liquid = sorted(out.values(), key=lambda x: x.get("vol_quote_24h", 0.0), reverse=True)
         liquid = liquid[:limit]
 
-        # finalize maps
+        # finalize
         global MARKET_MAP, COINS_LIST
         MARKET_MAP = {f"{x['base']}-USDT": x for x in liquid}
         COINS_LIST = list(MARKET_MAP.keys())
@@ -340,35 +352,74 @@ def refresh_markets(limit: int = MAX_SCAN):
     except Exception:
         logger.exception("refresh_markets error")
 
-
-def get_ohlc_okx(instId: str, bar: str = "1H", limit: int = 100) -> pd.DataFrame:
-    """
-    Lấy dữ liệu OHLC từ OKX (REST API).
-    Có xử lý fallback nếu bị chặn 403.
-    """
-    url = f"{OKX_BASE}/api/v5/market/candles"
-    params = {"instId": instId, "bar": bar, "limit": limit}
-    j = okx_get_json(url, params=params)
-
-    if not j or "data" not in j:
-        return pd.DataFrame()
+def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, headers: dict | None = None):
+    default_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/json",
+        "Referer": "https://www.okx.com/",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    if headers:
+        default_headers.update(headers)
 
     try:
-        df = pd.DataFrame(j["data"], columns=[
-            "ts", "open", "high", "low", "close", "volume", "volCcy"
-        ])
-        df["ts"] = pd.to_datetime(df["ts"], unit="ms")
-        df = df.astype({
-            "open": float, "high": float, "low": float,
-            "close": float, "volume": float, "volCcy": float
-        })
-        df = df.sort_values("ts").reset_index(drop=True)
-        return df
+        for attempt in range(3):
+            r = requests.get(url, params=params, headers=default_headers, timeout=timeout)
+            if r.status_code == 403:
+                wait = 2 ** attempt
+                logger.warning(f"403 Forbidden → thử lại sau {wait}s...")
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            j = r.json()
+            if j.get("code") not in (None, "0"):
+                logger.warning(f"OKX non-zero code: {j}")
+            return j
+        return {}
     except Exception as e:
-        logger.exception(f"Parse OHLC error: {instId} {bar} {e}")
-        return pd.DataFrame()
+        logger.exception(f"OKX request error: {url} {params} {e}")
+        return {}
 
+def get_ohlc_okx(symbol: str, bar="15m", limit=100):
+    """
+    Lấy dữ liệu OHLC từ OKX (candles).
+    Thử public API trước, nếu rỗng thì fallback sang signed API.
+    Return: pandas.DataFrame hoặc None nếu fail.
+    """
+    try:
+        endpoint = "/api/v5/market/candles"
+        inst_id = f"{symbol}-SWAP"
+        params = {"instId": inst_id, "bar": bar, "limit": limit}
 
+        # thử public trước
+        j = okx_get_json("https://www.okx.com" + endpoint,
+                         params=params,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        data = j.get("data", []) if j else []
+
+        if not data:
+            logger.warning(f"Public candles API rỗng → fallback signed {inst_id}")
+            j = okx_get_json_signed(endpoint, params)
+            data = j.get("data", []) if j else []
+
+        if not data:
+            return None  # lỗi → return None
+
+        df = pd.DataFrame(data, columns=[
+            "ts", "open", "high", "low", "close",
+            "vol", "volCcy", "volCcyQuote", "confirm"
+        ])
+        df["ts"] = pd.to_datetime(df["ts"].astype(float), unit="ms")
+        df = df.sort_values("ts").reset_index(drop=True)
+        df[["open", "high", "low", "close", "vol"]] = df[["open", "high", "low", "close", "vol"]].astype(float)
+
+        return df
+    except Exception:
+        logger.exception("get_ohlc_okx error")
+        return None
+		
 def detect_flow_signals(coin: str):
     """
     Return dict with:
@@ -453,13 +504,221 @@ def _normalize_okx_candles_to_df(data: List[List[Any]]) -> pd.DataFrame:
     df = df.sort_values("ts").reset_index(drop=True)
     return df[["ts", "open", "high", "low", "close", "vol"]]
 
+def fetch_okx(url, params=None, retries=3, timeout=10):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/119.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+        "Referer": "https://www.okx.com/"
+    }
+
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=timeout, proxies={"http": PROXY, "https": PROXY} if PROXY else None)
+            r.raise_for_status()
+            return r.json()
+        except requests.exceptions.HTTPError as e:
+            if r.status_code == 403:
+                logger.warning(f"403 Forbidden, retrying ({attempt+1}/{retries}) {url} {params}")
+                time.sleep(1.5)
+            else:
+                logger.error(f"OKX HTTPError: {url} {params} {e}")
+                break
+        except Exception as e:
+            logger.error(f"OKX request error: {url} {params} {e}")
+            time.sleep(1.0)
+    return None
+
+# Lấy danh sách tickers SWAP
+def fetch_tickers_okx():
+    url = f"{OKX_BASE}/market/tickers"
+    params = {"instType": "SWAP"}
+    data = fetch_okx(url, params)
+    return data.get("data", []) if data else []
+
+# Lấy danh sách instruments SWAP
+def fetch_instruments_okx():
+    url = f"{OKX_BASE}/public/instruments"
+    params = {"instType": "SWAP"}
+    data = fetch_okx(url, params)
+    return data.get("data", []) if data else []
+
+# Lấy nến (candlestick) cho 1 coin
+def fetch_candles_okx(inst_id: str, bar: str = "1H", limit: int = 200):
+    url = f"{OKX_BASE}/market/candles"
+    params = {"instId": inst_id, "bar": bar, "limit": limit}
+    data = fetch_okx(url, params)
+    # Delay nhẹ để tránh spam
+    time.sleep(0.2)
+    return data.get("data", []) if data else []
+
+# Ví dụ sử dụng API key (tùy chọn)
+def fetch_okx_with_key(url, params=None, api_key="", api_pass="", api_secret=""):
+    headers = {
+        "OK-ACCESS-KEY": api_key,
+        "OK-ACCESS-PASSPHRASE": api_pass,
+        # Bạn có thể thêm signature + timestamp nếu gọi private endpoints
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+        "Referer": "https://www.okx.com/"
+    }
+    r = requests.get(url, params=params, headers=headers)
+    r.raise_for_status()
+    return r.json()
+
+import base64, hmac, hashlib, time, os
+import requests
+
+def okx_sign_request(method: str, path: str, body: str = ""):
+    """Tạo headers với chữ ký OKX cho request private."""
+    api_key = os.getenv("OKX_API_KEY")
+    secret_key = os.getenv("OKX_API_SECRET")
+    passphrase = os.getenv("OKX_API_PASSPHRASE")
+
+    if not (api_key and secret_key and passphrase):
+        return {}
+
+    # timestamp dạng 2025-09-05T03:30:00.000Z
+    timestamp = dt.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
+
+    # message cần ký
+    prehash = f"{timestamp}{method.upper()}{path}{body}"
+    sign = hmac.new(
+        secret_key.encode("utf-8"),
+        prehash.encode("utf-8"),
+        hashlib.sha256
+    ).digest()
+    sign_b64 = base64.b64encode(sign).decode()
+
+    return {
+        "OK-ACCESS-KEY": api_key,
+        "OK-ACCESS-SIGN": sign_b64,
+        "OK-ACCESS-TIMESTAMP": timestamp,
+        "OK-ACCESS-PASSPHRASE": passphrase,
+        "Content-Type": "application/json"
+    }
+
+def okx_get_json_signed(endpoint: str, params=None, method: str = "GET", timeout: int = 15):
+    """
+    Gọi API OKX có ký (API key).
+    - endpoint: ví dụ "/api/v5/market/tickers"
+    - params: dict query/body
+    Tự động retry khi 403/5xx, trả {} nếu lỗi.
+    """
+    import json
+    from urllib.parse import urlencode
+
+    base_url = "https://www.okx.com"
+    path = endpoint
+    query = ""
+    body = ""
+
+    if method.upper() == "GET" and params:
+        query = "?" + urlencode(params)
+    elif method.upper() in ("POST", "PUT") and params is not None:
+        body = json.dumps(params)
+
+    # build headers with OKX auth
+    def _signed_headers(ts: str) -> dict:
+        prehash = f"{ts}{method.upper()}{path}{query}{body}"
+        sign = hmac.new(os.getenv("OKX_API_SECRET", "").encode(), prehash.encode(), hashlib.sha256).digest()
+        sign_b64 = base64.b64encode(sign).decode()
+        return {
+            "OK-ACCESS-KEY": os.getenv("OKX_API_KEY", ""),
+            "OK-ACCESS-SIGN": sign_b64,
+            "OK-ACCESS-TIMESTAMP": ts,
+            "OK-ACCESS-PASSPHRASE": os.getenv("OKX_API_PASSPHRASE", ""),
+            "Content-Type": "application/json",
+            # Một số endpoint market vẫn cho public nhưng thêm UA giúp giảm 403
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+            "Referer": "https://www.okx.com/",
+        }
+
+    url = base_url + path + query
+
+    for attempt in range(3):
+        try:
+            ts = dt.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
+            headers = _signed_headers(ts)
+            r = requests.request(method.upper(), url, headers=headers, data=body, timeout=timeout)
+            if r.status_code in (403, 429, 500, 502, 503, 504):
+                wait = 2 ** attempt
+                logger.warning(f"Signed request {url} → {r.status_code}. Thử lại sau {wait}s...")
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            j = r.json()
+            if isinstance(j, dict) and j.get("code") not in (None, "0"):
+                logger.warning(f"OKX signed non-zero code: {j}")
+            return j
+        except Exception as e:
+            logger.exception(f"OKX signed request error: {url} {params} {e}")
+            time.sleep(2 ** attempt)
+    return {}
+def 
+get_ticker_okx(inst: str):
+    """
+    Lấy ticker cho 1 instrument.
+    """
+    inst_id = MARKET_MAP.get(inst, {}).get("inst_id", f"{inst}-SWAP")
+    data = {}
+
+    url = "/api/v5/market/ticker"
+    params = {"instId": inst_id}
+
+    try:
+        j = okx_get_json("https://www.okx.com" + url, params)
+        data_list = j.get("data", []) if j else []
+        if not data_list:
+            logger.warning(f"Public ticker API rỗng → fallback signed {inst_id}")
+            j = okx_get_json_signed(url, params)
+            data_list = j.get("data", []) if j else []
+        if data_list:
+            data = data_list[0]
+    except Exception:
+        logger.warning(f"Public ticker API lỗi → fallback signed {inst_id}")
+        j = okx_get_json_signed(url, params)
+        data_list = j.get("data", []) if j else []
+        if data_list:
+            data = data_list[0]
+
+    return data
+def get_orderbook_okx(inst: str, depth=5):
+    """
+    Lấy orderbook cho 1 instrument.
+    """
+    inst_id = MARKET_MAP.get(inst, {}).get("inst_id", f"{inst}-SWAP")
+    data = {}
+
+    url = "/api/v5/market/books"
+    params = {"instId": inst_id, "sz": depth}
+
+    try:
+        j = okx_get_json("https://www.okx.com" + url, params)
+        data = j.get("data", [])[0] if j and j.get("data") else {}
+        if not data:
+            logger.warning(f"Public orderbook API rỗng → fallback signed {inst_id}")
+            j = okx_get_json_signed(url, params)
+            data = j.get("data", [])[0] if j and j.get("data") else {}
+    except Exception:
+        logger.warning(f"Public orderbook API lỗi → fallback signed {inst_id}")
+        j = okx_get_json_signed(url, params)
+        data = j.get("data", [])[0] if j and j.get("data") else {}
+
+    return data
+
+
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
     if len(df) < 2:
         return None
 
     coin = symbol.upper()
-    now = datetime.now(timezone.utc)
+    now = dt.datetime.now(dt.timezone.utc)
 
     last_row = df.iloc[-1]
     prev_row = df.iloc[-2]
@@ -492,19 +751,21 @@ async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
 async def detect_flow_multi_tf(symbol: str):
     """
     Multi-timeframe flow detection (prefer short TFs).
-    Check FLOW_TFS (3m,15m,1H,4H) in priority order. Return:
+    Check FLOW_TFS (3m,15m,1H,4H) theo thứ tự ưu tiên.
+    Return:
       { 'inflow': bool, 'outflow': bool, 'tf': tf_string, 'details': {...} }
-    Details contains last_vol, mean_prev_vol, price_now, price_change_pct, inflow_strength, outflow_strength
     """
     try:
         for tf in FLOW_TFS:
-            # limit smaller for short timeframes
             lim = 25 if tf in ("3m", "15m") else 50
             df = get_ohlc_okx(symbol, bar=tf, limit=lim)
-            if df.empty or len(df) < 6:
+
+            if df is None or df.empty or len(df) < 6:
                 continue
+
             last = df.iloc[-1]
             prev = df.iloc[:-1]
+
             mean_prev_vol = float(prev["vol"].mean()) if not prev.empty else 0.0
             last_vol = float(last["vol"]) if not pd.isna(last["vol"]) else 0.0
             price_now = float(last["close"])
@@ -538,24 +799,61 @@ async def detect_flow_multi_tf(symbol: str):
                         "outflow_strength": outflow_strength
                     }
                 }
+
+        # nếu không có tín hiệu
         return {"inflow": False, "outflow": False, "tf": None, "details": {}}
+
     except Exception:
         logger.exception(f"detect_flow_multi_tf error for {symbol}")
         return {"inflow": False, "outflow": False, "tf": None, "details": {}}
 
+#=========== message ===========
+import html
+import logging
+
+async def safe_send(bot, chat_id, text, **kwargs):
+    MAX_LEN = 4000
+    # Nếu text None hoặc rỗng → thay bằng thông báo fallback
+    if not text or not str(text).strip():
+        text = "⚠️ Không có dữ liệu để hiển thị."
+
+    if len(text) > MAX_LEN:
+        text = text[:MAX_LEN] + "\n... (cắt bớt)"
+    try:
+        # Escape toàn bộ text trước khi gửi (khi dùng HTML)
+        if kwargs.get("parse_mode") == "HTML":
+            text = html.escape(text)
+        return await bot.send_message(chat_id=chat_id, text=text, **kwargs)
+    except Exception as e:
+        logging.error(f"send_message failed: {e}")
+        return None
+
+async def safe_edit(message, text, **kwargs):
+    MAX_LEN = 4000
+    # Nếu text None hoặc rỗng → thay bằng thông báo fallback
+    if not text or not str(text).strip():
+        text = "⚠️ Không có dữ liệu để hiển thị."
+
+    if len(text) > MAX_LEN:
+        text = text[:MAX_LEN] + "\n... (cắt bớt)"
+    try:
+        return await message.edit_text(text, **kwargs)
+    except Exception:
+        return await message.reply_text(text, **kwargs)
+
 # ================== NEWS API ==================
 LAST_NEWS_CACHE = []
 LAST_NEWS_FETCH = None
-NEWS_CACHE_TTL = timedelta(minutes=10) 
+NEWS_CACHE_TTL = dt.timedelta(minutes=35) 
 
 def get_news_general(limit: int = 5):
     global LAST_NEWS_CACHE, LAST_NEWS_FETCH
-    now = datetime.now()
-    
-    # nếu cache còn hạn thì trả về cache
+    now = dt.datetime.now()
+
+    # Nếu cache còn hạn thì trả về cache
     if LAST_NEWS_FETCH and (now - LAST_NEWS_FETCH) < NEWS_CACHE_TTL:
         return LAST_NEWS_CACHE[:limit]
-    
+
     # Thử lấy từ CryptoPanic trước
     try:
         url = "https://cryptopanic.com/api/v1/posts/"
@@ -563,6 +861,11 @@ def get_news_general(limit: int = 5):
         r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         j = r.json()
+
+        # Nếu trả về quota limit thì bỏ qua và fallback
+        if "error" in j or "message" in j and "limit" in j["message"].lower():
+            raise RuntimeError("CryptoPanic quota exceeded")
+
         articles = j.get("results", [])
         out = []
         for a in articles[:limit]:
@@ -574,9 +877,9 @@ def get_news_general(limit: int = 5):
             LAST_NEWS_CACHE = out
             LAST_NEWS_FETCH = now
             return out
-    except Exception as e:
-        logger.warning(f"CryptoPanic error: {e}, dùng fallback CoinStats")
-    
+    except Exception:
+        logger.warning("CryptoPanic lỗi/quota full → fallback CoinStats")
+
     # fallback CoinStats
     try:
         url = "https://api.coinstats.app/public/v1/news"
@@ -596,12 +899,50 @@ def get_news_general(limit: int = 5):
             return out[:limit]
     except Exception as e:
         logger.exception("CoinStats fallback error")
-    
+
     # nếu không lấy được gì
     return ["Không lấy được tin tức thị trường."]
 
 
-import datetime as dt
+def get_news_coin(coin: str, limit: int = 5):
+    sym = coin.upper().replace("-USDT", "").replace("-USD", "")
+    
+    # Thử CryptoPanic
+    try:
+        url = "https://cryptopanic.com/api/v1/posts/"
+        params = {"auth_token": CRYPTOPANIC_KEY, "currencies": sym}
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        articles = j.get("results", [])
+        out = []
+        for a in articles[:limit]:
+            title = a.get("title")
+            link = a.get("url")
+            if title and link:
+                out.append(f"- {title}\n🔗 {link}")
+        if out:
+            return out
+    except Exception as e:
+        logger.warning(f"CryptoPanic coin news error: {e}, dùng fallback CoinStats")
+    
+    # fallback CoinStats
+    try:
+        url = "https://api.coinstats.app/public/v1/news"
+        r = requests.get(url, params={"skip": 0, "limit": 20}, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        articles = j.get("news", [])
+        out = []
+        for a in articles:
+            title = a.get("title", "")
+            link = a.get("link", "")
+            if sym and title and sym in title.upper():
+                out.append(f"- {title}\n🔗 {link}")
+        return out[:limit] if out else [f"Không có tin tức mới cho {sym}."]
+    except Exception as e:
+        logger.exception("CoinStats fallback error")
+        return [f"Không lấy được tin tức cho {coin}."]
 
 def get_news_today(limit: int = 10):
     """
@@ -618,36 +959,9 @@ def get_news_today(limit: int = 10):
         for a in articles:
             title = a.get("title", "")
             link = a.get("link", "")
-            pub_ts = a.get("publishedAt")  # timestamp UTC (epoch seconds)
-            if title and link and pub_ts:
-                pub_date = dt.datetime.utcfromtimestamp(pub_ts).date()
-                if pub_date == today:
-                    out.append(f"- {title}\n🔗 {link}")
-            if len(out) >= limit:
-                break
-        return out if out else ["Không có tin tức hôm nay."]
-    except Exception as e:
-        logger.exception("CoinStats get_news_today error")
-        return ["Không lấy được tin tức hôm nay."]
-
-def get_news_today(limit: int = 10):
-    """
-    Lấy tin tức thị trường trong ngày từ CoinStats
-    """
-    try:
-        url = "https://api.coinstats.app/public/v1/news"
-        r = requests.get(url, params={"skip": 0, "limit": 50}, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("news", [])
-        today = datetime.utcnow().date()
-        out = []
-        for a in articles:
-            title = a.get("title", "")
-            link = a.get("link", "")
             pub_ts = a.get("publishedAt")  # timestamp UTC
             if title and link and pub_ts:
-                pub_date = datetime.fromtimestamp(pub_ts, tz=timezone.utc).date()
+                pub_date = datetime.utcfromtimestamp(pub_ts).date()
                 if pub_date == today:
                     out.append(f"- {title}\n🔗 {link}")
             if len(out) >= limit:
@@ -715,6 +1029,8 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
     - RSI position (bullish: 50-70; bearish: 30-50)
     - ADX strength (>20)
     """
+    if df is None:
+        return 0.0, {}
     if df.empty or len(df) < 50:
         return 0.0, {}
     inds = _indicators(df)
@@ -845,12 +1161,14 @@ def ai_news_analysis(coin: str, news_list: list) -> str:
 
 
 # ================== UI (Telegram) ==================
-def main_menu():
+def main_menu(user_id: int) -> InlineKeyboardMarkup:
+    state = "ON ✅" if alerts.get(user_id, False) else "OFF ❌"
     keyboard = [
         [InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0")],
         [InlineKeyboardButton("🔍 Research (Scanner)", callback_data="research_btn")],
+        [InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_btn")],
         [InlineKeyboardButton("📰 Tin tức thị trường", callback_data="news_market_menu")],
-        [InlineKeyboardButton("⚡ Toggle Alerts", callback_data="toggle_alerts")]
+        [InlineKeyboardButton(f"⚡ Toggle Alerts: {state}", callback_data="toggle_alert")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -891,6 +1209,8 @@ def news_menu_markup(coin_id):
         [InlineKeyboardButton("⬅️ Back", callback_data=f"coin:{coin_id}")]
     ]
     return InlineKeyboardMarkup(keyboard)
+
+
 
 # ================== HELPERS ==================
 def percent_change_over_period(df: pd.DataFrame, lookback: int = 24):
@@ -1032,7 +1352,7 @@ def suggest_grid_future(price: float, support: Optional[float] = None, resistanc
 
 # === Bot commands & handlers ===
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! Use /research to scan coins and /dca <COIN> to get DCA/Grid suggestions.")
+    await start_handler(update, context)
 
 async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1052,10 +1372,10 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for coin in coins:
         try:
             # fetch candles for multiple timeframes
-            df15 = await get_ohlc_okx(coin, bar="15m", limit=200)
-            df1h = await get_ohlc_okx(coin, bar="1H", limit=200)
-            df4h = await get_ohlc_okx(coin, bar="4H", limit=200)
-            df1d = await get_ohlc_okx(coin, bar="1D", limit=200)
+            df15 = get_ohlc_okx(coin, bar="15m", limit=200)
+            df1h = get_ohlc_okx(coin, bar="1H", limit=200)
+            df4h = get_ohlc_okx(coin, bar="4H", limit=200)
+            df1d = get_ohlc_okx(coin, bar="1D", limit=200)
 
             price = None
             if not df1h.empty:
@@ -1103,6 +1423,7 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f" • 15 orders sample: {', '.join(map(lambda x: str(x['price']), cfg15['steps'][:5]))}...\n"
                 f" • 20 orders sample: {', '.join(map(lambda x: str(x['price']), cfg20['steps'][:5]))}...\n"
                 f" • 30 orders sample: {', '.join(map(lambda x: str(x['price']), cfg30['steps'][:5]))}...\n"
+				f"Sức chống chịu (max drawdown): {cfg15['max_drawdown_pct']}%"
                 f"🔲 Grid: {len(grid_cfg['grid_levels'])-1} grids | step% ≈ {grid_cfg['grid_step_pct']}% | Range: {grid_cfg['support']} ↔ {grid_cfg['resistance']}\n"
             )
             lines.append(line)
@@ -1111,6 +1432,71 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     out = "\n\n".join(lines) if lines else "No results"
     await update.message.reply_text(out, parse_mode="HTML", disable_web_page_preview=True)
+
+async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "all"):
+    """
+    Quét các coin có thanh khoản cao + xu hướng rõ ràng để gợi ý bot DCA.
+    mode = all | bull | bear
+    """
+    lines = []
+    for coin, info in MARKET_MAP.items():
+        try:
+            price = info.get("current_price")
+            volq = info.get("vol_quote_24h", 0)
+            if not price or volq < 10_000_000:
+                continue
+
+            df1d = get_ohlc_okx(coin, bar="1D", limit=200)
+            if df1d.empty:
+                continue
+
+            trend_score, trend_type = compute_trend_score(df1d)
+
+            # lọc theo mode
+            if mode == "bull" and trend_type != "bullish":
+                continue
+            if mode == "bear" and trend_type != "bearish":
+                continue
+            if mode == "all" and abs(trend_score) < 60:
+                continue
+
+            sup, res = compute_support_resistance_from_df(df1d, window=90)
+            if not sup or sup >= price:
+                continue
+
+            max_dd_pct = ((price - sup) / price) * 100.0
+            step15 = round(max_dd_pct / 15, 3)
+            step20 = round(max_dd_pct / 20, 3)
+            step30 = round(max_dd_pct / 30, 3)
+
+            margin = 20
+            kq15 = round(margin * 15 * (max_dd_pct/100), 3)
+            kq20 = round(margin * 20 * (max_dd_pct/100), 3)
+            kq30 = round(margin * 30 * (max_dd_pct/100), 3)
+
+            text = (
+                f"🔎 <b>{coin}</b>\n"
+                f"Giá hiện tại: <code>{price:.4f}</code>\n"
+                f"Support gần nhất: <code>{sup:.4f}</code>\n"
+                f"Max Drawdown: <code>{max_dd_pct:.2f}%</code>\n"
+                f"Trend Score: <b>{trend_score}</b> ({trend_type})\n\n"
+                f"➡️ Bước giá gợi ý:\n"
+                f"- 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
+                f"- 20 lệnh: {step20}% | Ký quỹ ≈ {kq20}\n"
+                f"- 30 lệnh: {step30}% | Ký quỹ ≈ {kq30}\n"
+                f"(margin x20, step×=0.97, money×=1.05)\n"
+                "——————————————"
+            )
+            lines.append(text)
+
+        except Exception as e:
+            logger.error(f"DCA research error {coin}: {e}")
+            continue
+
+    out = "\n\n".join(lines) if lines else "❌ Không tìm thấy coin phù hợp."
+    chat_id = update.effective_chat.id
+    await safe_send(context.bot, chat_id=chat_id, text=out, parse_mode="HTML", disable_web_page_preview=True)
+
 
 async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1123,8 +1509,8 @@ async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     coin = args[0].upper()
     # fetch price + SR D1
-    df1h = await get_ohlc_okx(coin, bar="1H", limit=200)
-    df1d = await get_ohlc_okx(coin, bar="1D", limit=200)
+    df1h = get_ohlc_okx(coin, bar="1H", limit=200)
+    df1d = get_ohlc_okx(coin, bar="1D", limit=200)
     price = None
     if not df1h.empty:
         price = float(df1h.iloc[-1]["close"])
@@ -1194,28 +1580,103 @@ async def scan_alerts(context: ContextTypes.DEFAULT_TYPE):
                     f"{details['1D']['score']:.0f}"
                 )
                 for chat_id in ALERT_CHAT_IDS:
-                    await context.bot.send_message(chat_id=chat_id, text=msg)
+                    await safe_send(context.bot, chat_id,text=msg)
     except Exception as e:
         logger.exception(f"scan_alerts error: {e}")
+
+async def send_flow_alerts(context, coin: str, sig: dict):
+    """
+    Gửi cảnh báo Pump/Dump thật với phân tích tiếp diễn
+    sig: dict từ detect_flow_multi_tf
+    """
+    tf = sig.get("tf") or "?"
+    d = sig.get("details", {})
+    last_vol = d.get("last_vol", 0)
+    mean_vol = d.get("mean_prev_vol", 0)
+    pct = d.get("price_change_pct", 0.0)
+    inflow = sig.get("inflow")
+    outflow = sig.get("outflow")
+
+    # Lấy dữ liệu 1H để phân tích kỹ thuật
+    df = get_ohlc_okx(coin, bar="1H", limit=200)
+    score_long, inds = compute_trend_score(df, mode="long")
+    score_short, inds_short = compute_trend_score(df, mode="short")
+
+    # Các chỉ báo chính
+    ema12, ema26 = inds.get("ema12"), inds.get("ema26")
+    macd, macd_sig = inds.get("macd"), inds.get("macd_signal")
+    rsi = inds.get("rsi")
+
+    # Kết luận pump/dump tiếp diễn
+    continuation = "❓ Chưa rõ xu hướng tiếp diễn."
+    if inflow:
+        if score_long >= 50 and ema12 > ema26:
+            if macd and macd_sig and macd > macd_sig and (rsi is None or rsi < 75):
+                continuation = "🚀 Khả năng cao tiếp tục PUMP mạnh (EMA & MACD đồng thuận, RSI chưa quá mua)."
+            else:
+                continuation = "⚡ Pump mạnh nhưng chỉ báo chưa đồng thuận hoàn toàn."
+        else:
+            continuation = "⚠️ Pump nhưng xu hướng chưa chắc chắn (cẩn thận trap)."
+
+    elif outflow:
+        if score_short >= 50 and ema12 < ema26:
+            if macd and macd_sig and macd < macd_sig and (rsi is None or rsi > 25):
+                continuation = "⚠️ Khả năng cao tiếp tục DUMP mạnh (EMA & MACD đồng thuận, RSI chưa quá bán)."
+            else:
+                continuation = "⚡ Dump mạnh nhưng chỉ báo chưa đồng thuận hoàn toàn."
+        else:
+            continuation = "⚠️ Dump nhưng xu hướng chưa chắc chắn (cẩn thận trap)."
+
+    # Xây tin nhắn gửi đi
+    if inflow:
+        msg = (
+            f"🔥 [15m] INFLOW đột biến: {coin}\n"
+            f"Vol: {last_vol:.0f} | MeanPrev: {mean_vol:.0f}\n"
+            f"Δ: {pct:.2f}% | Strength: x{d.get('inflow_strength') or 0:.2f}\n\n"
+            f"{continuation}"
+        )
+    else:
+        msg = (
+            f"⚠️ [15m] OUTFLOW đột biến: {coin}\n"
+            f"Vol: {last_vol:.0f} | MeanPrev: {mean_vol:.0f}\n"
+            f"Δ: {pct:.2f}% | Strength: x{d.get('outflow_strength') or 0:.2f}\n\n"
+            f"{continuation}"
+        )
+
+    # Gửi tới các chat đã bật Alerts
+    for chat in list(ALERT_CHAT_IDS):
+        try:
+            await safe_send(context.bot,chat_id=chat, text=msg)
+        except Exception as e:
+            logger.exception("Failed to send flow alert")
+
 
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     refresh_markets(MAX_SCAN)
-    await update.message.reply_text("👋 Crypto Research Bot (OKX • Liquidity & Trend)", reply_markup=main_menu())
+    user_id = update.effective_user.id
+    await update.message.reply_text(
+        "👋 Crypto Research Bot (OKX • Liquidity & Trend)",
+        reply_markup=main_menu(user_id)
+    )
+
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data
+    chat_id = update.effective_chat.id   # lấy chat id
 
     if data.startswith("research:"):
         _, symbol, mode = data.split(":")
         await research_handler(update, context, symbol=symbol, mode=mode)
 
-    chat_id = update.effective_chat.id
-
-    if data == "main":
-        await query.edit_message_text("🏠 Menu", reply_markup=main_menu())
+    elif data == "main":
+        user_id = update.effective_user.id
+        await safe_edit(
+            update.callback_query.message,
+            text="🏠 Menu",
+            reply_markup=main_menu(user_id)
+        )
 
     elif data.startswith("topcoins:"):
         page = int(data.split(":")[1])
@@ -1230,14 +1691,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for c in subset:
             v = MARKET_MAP.get(c,{}).get("vol_quote_24h",0)
             text += f"- {c}: ~{v:,.0f} USDT\n"
-        await query.edit_message_text(text, reply_markup=coins_page_markup(page))
+        await safe_edit(update.callback_query.message, text=text, reply_markup=coins_page_markup(page))
 
     elif data.startswith("coin:"):
         coin = data.split(":")[1]
         price = MARKET_MAP.get(coin, {}).get("current_price")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
-        txt = f"🔎 {coin}\nGiá: {price} USDT\nThanh khoản 24h: ~{volq:,.0f} USDT"
-        await context.bot.send_message(chat_id=chat_id, text=txt, reply_markup=coin_actions_markup(coin))
+        txt = f"🔎 {coin}\\nGiá: {price} USDT\\nThanh khoản 24h: ~{volq:,.0f} USDT"
+        await safe_send(context.bot, chat_id=chat_id, text=txt, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("chart:"):
         coin = data.split(":")[1]
@@ -1250,7 +1711,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         df = get_ohlc_okx(coin, bar="1H", limit=200)
         _, inds = compute_trend_score(df, mode="long")  # returns score + inds
         if not inds:
-            await context.bot.send_message(chat_id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
+            await safe_send(context.bot,chat_id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
             return
         text = (f"📋 {coin} (1H):\n"
                 f"- Close: {inds.get('latest_close')}\n"
@@ -1259,29 +1720,30 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"- MACD/MACDs: {inds.get('macd')}/{inds.get('macd_signal')}\n"
                 f"- ADX: {inds.get('adx')}\n"
                 f"- Signal: {inds.get('signal')}\n")
-        await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot,chat_id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("ai:"):
         coin = data.split(":")[1]
         avg, details = multi_tf_score(coin, mode="long")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         ai_text = ai_analysis(coin, details, volq, "long")
-        await context.bot.send_message(chat_id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
+        await safe_send(context.bot,chat_id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
 
     elif data == "back_coins":
-        await context.bot.send_message(chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
+        await safe_send(context.bot,chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
 
-    elif data == "toggle_alerts":
-        if chat_id in ALERT_CHAT_IDS:
-            ALERT_CHAT_IDS.remove(chat_id)
-            await context.bot.send_message(chat_id=chat_id, text="⚡ Alerts: OFF", reply_markup=main_menu())
-        else:
-            ALERT_CHAT_IDS.add(chat_id)
-            await context.bot.send_message(chat_id=chat_id, text="⚡ Alerts: ON", reply_markup=main_menu())
+    elif data == "toggle_alert":
+        user_id = update.effective_user.id
+        alerts[user_id] = not alerts.get(user_id, False)
+        await safe_edit(
+            update.callback_query.message,
+            text="🏠 Menu",
+            reply_markup=main_menu(user_id)
+        )
 
     elif data == "research_btn":
-        await query.edit_message_text("🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
-
+        await safe_edit(update.callback_query.message, text="🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
+		
     elif data == "news_market_menu":
         news_list = get_news_today(limit=10)
         text = "📰 Tin tức hôm nay:\n\n" + "\n\n".join(news_list)
@@ -1289,25 +1751,45 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("news_menu:"):
         coin = data.split(":")[1]
-        await query.edit_message_text("📰 Chọn loại tin tức:", reply_markup=news_menu_markup(coin))
+        await safe_edit(update.callback_query.message, "📰 Chọn loại tin tức:", reply_markup=news_menu_markup(coin))
 
     elif data.startswith("news_market:"):
         coin = data.split(":")[1]
         news_list = get_news_general()
         news_text = "📰 Tin tức thị trường:\n\n" + "\n\n".join(news_list)
-        await context.bot.send_message(chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     elif data.startswith("news_coin:"):
         coin = data.split(":")[1]
         news_list = get_news_coin(coin)
         news_text = f"💡 Tin tức về {coin}:\n\n" + "\n\n".join(news_list)
-        await context.bot.send_message(chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     if data == "research_long":
         await research_handler(update, context, mode="long")
 
     elif data == "research_short":
         await research_handler(update, context, mode="short")
+
+    elif data == "bot_dca_btn":
+        keyboard = [
+            [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
+            [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
+            [InlineKeyboardButton("🔎 Tất cả", callback_data="bot_dca_all")],
+            [InlineKeyboardButton("⬅️ Quay lại", callback_data="main_menu")]
+        ]
+        await update.callback_query.message.edit_text(
+            "Chọn chế độ lọc Bot DCA:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+    elif data == "bot_dca_bull":
+        await research_dca_bot(update, context, mode="bull")
+    elif data == "bot_dca_bear":
+        await research_dca_bot(update, context, mode="bear")
+    elif data == "bot_dca_all":
+        await research_dca_bot(update, context, mode="all")
+
 
     elif data.startswith("dca:"):
         coin = data.split(":")[1]
@@ -1327,10 +1809,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"DCA (30 orders):\n{', '.join(map(str,d30))}\n\n"
             f"Grid (10):\n{', '.join(map(str,grid10))}\n"
         )
-        await context.bot.send_message(chat_id=chat_id, text=text)
+        await safe_send(context.bot,chat_id=chat_id, text=text)
 
-
+import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
+    global last_sent
+    utcnow = dt.datetime.now(dt.timezone.utc)
+
+
+# Khi gán last_sent cũng phải dùng aware datetime
+    if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
+        last_sent = utcnow
     """
     Enhanced background job:
      - refresh markets stub
@@ -1340,7 +1829,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
     """
     try:
         await refresh_markets_stub()
-        utcnow = datetime.now(timezone.utc)
+        utcnow = dt.datetime.now(dt.timezone.utc)
 
         # Hourly market news broadcast (only once per NEWS_HOURLY_COOLDOWN)
         global LAST_NEWS_HOUR, LAST_NEWS_IDS
@@ -1359,7 +1848,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                 text = "📰 Tin tức thị trường (mới):\n\n" + "\n\n".join(new_articles)
                 for chat in list(ALERT_CHAT_IDS):
                     try:
-                        await context.bot.send_message(chat_id=chat, text=text)
+                        await safe_send(context.bot,chat_id=chat, text=text)
                     except Exception:
                         logger.exception("Failed to send hourly market news")
             LAST_NEWS_HOUR = utcnow
@@ -1377,7 +1866,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                 change = ((price - old) / old) * 100.0
                 if abs(change) >= ALERT_THRESHOLD:
                     last = LAST_ALERT.get(cid)
-                    if not last or (utcnow - last) >= timedelta(minutes=8):
+                    if not last or (utcnow - last) >= dt.timedelta(minutes=8):
                         LAST_ALERT[cid] = utcnow
                         # compute short timeframe score
                         df15 = get_ohlc_okx(cid, bar="15m", limit=200)
@@ -1389,46 +1878,48 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                         )
                         for chat in list(ALERT_CHAT_IDS):
                             try:
-                                await context.bot.send_message(chat_id=chat, text=msg)
+                                await safe_send(context.bot,chat_id=chat, text=msg)
                             except Exception:
                                 logger.exception("Failed to send price change alert")
 
+            # Multi-TF flow detection (immediate alerts to toggled chats)
             # Multi-TF flow detection (immediate alerts to toggled chats)
             # Multi-TF flow detection (immediate alerts to toggled chats)
             sig = await detect_flow_multi_tf(cid)
             if sig and (sig.get("inflow") or sig.get("outflow")):
                 tf = sig.get("tf") or "?"
                 if tf != "15m":
-                    continue  # chỉ gửi alert nếu tf là 15m
-                typ = "inflow" if sig.get("inflow") else "outflow"
-                key = (cid, tf, typ)
-                if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
-                    LAST_FLOW_ALERTS[key] = utcnow
-                    d = sig.get("details", {})
-                    if typ == "inflow":
-                        msg = (
-                            f"🔥 [15m] INFLOW đột biến: {cid}\n"
-                            f"Vol: {d.get('last_vol'):.0f} | MeanPrev: {d.get('mean_prev_vol'):.0f}\n"
-                            f"Δ: {d.get('price_change_pct'):.2f}% | Strength: x{d.get('inflow_strength') or 0:.2f}"
-                        )
-                    else:
-                        msg = (
-                            f"⚠️ [15m] OUTFLOW đột biến: {cid}\n"
-                            f"Vol: {d.get('last_vol'):.0f} | MeanPrev: {d.get('mean_prev_vol'):.0f}\n"
-                            f"Δ: {d.get('price_change_pct'):.2f}% | Strength: x{d.get('outflow_strength') or 0:.2f}"
-                        )
-                    for chat in list(ALERT_CHAT_IDS):
-                        try:
-                            await context.bot.send_message(chat_id=chat, text=msg)
-                        except Exception:
-                            logger.exception("Failed to send 15m flow alert")
+                    continue  # bỏ qua nếu không phải 15m
 
+                typ = "inflow" if sig.get("inflow") else "outflow"
+                key = (cid, tf, typ)   # lúc này tf chắc chắn đã có giá trị
+
+            if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
+                LAST_FLOW_ALERTS[key] = utcnow
+                d = sig.get("details", {})
+                if typ == "inflow":
+                    msg = (
+                        f"🔥 [15m] INFLOW đột biến: {cid}\n"
+                        f"Vol: {d.get('last_vol'):.0f} | MeanPrev: {d.get('mean_prev_vol'):.0f}\n"
+                        f"Δ: {d.get('price_change_pct'):.2f}% | Strength: x{d.get('inflow_strength') or 0:.2f}"
+                    )
+                else:
+                    msg = (
+                        f"⚠️ [15m] OUTFLOW đột biến: {cid}\n"
+                        f"Vol: {d.get('last_vol'):.0f} | MeanPrev: {d.get('mean_prev_vol'):.0f}\n"
+                        f"Δ: {d.get('price_change_pct'):.2f}% | Strength: x{d.get('outflow_strength') or 0:.2f}"
+                    )
+                for chat in list(ALERT_CHAT_IDS):
+                    try:
+                        await safe_send(context.bot,chat_id=chat, text=msg)
+                    except Exception:
+                        logger.exception("Failed to send 15m flow alert")
     except Exception:
         logger.exception("Error in background_price_checker")
 
 async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="long"):
     chat_id = update.effective_chat.id
-    await context.bot.send_message(chat_id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
+    await safe_send(context.bot,chat_id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
 
 
     refresh_markets(MAX_SCAN)
@@ -1489,7 +1980,7 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
 
     if not results:
-        await context.bot.send_message(
+        await safe_send(context.bot,
             chat_id=chat_id,
             text="❌ Không tìm thấy coin có xu hướng rõ ràng và thanh khoản đủ.",
             reply_markup=research_choice_markup()
@@ -1504,18 +1995,13 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             f"🧭 15m/1H/4H/1D: <code>{r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']}</code>\n"
             f"💧 Vol24h≈ <code>{r['volq']:,.0f} USDT</code>\n"
             f"💰 Giá: <code>{r['price']}</code> | 24h: <code>{r['pct_24h']}%</code>\n"
-            f"🎯 Entry gợi ý: <code>{r['entry']}</code>\n"
+            f"🎯 Entry gợi ý: {r['entry']}\n"
             f"🛑 Kháng cự: <code>{r['resistance']}</code> | 🛡️ Hỗ trợ: <code>{r['support']}</code>\n"
-            f"\n🤖 <b>DCA Future suggestions</b> (TP={cfg15['tp_pct']}% | Lev=x{cfg15['leverage']})\n"
-            f"• 15 orders: step ≈ {cfg15['avg_step_pct']}% | sức chống chịu ≈ {cfg15['max_drawdown_pct']}%\n"
-            f"• 20 orders: step ≈ {cfg20['avg_step_pct']}% | sức chống chịu ≈ {cfg20['max_drawdown_pct']}%\n"
-            f"• 30 orders: step ≈ {cfg30['avg_step_pct']}% | sức chống chịu ≈ {cfg30['max_drawdown_pct']}%\n"
-            f"🔲 Grid (first 5/last 1 of 10): <code>{','.join(map(str, r['grid_10'][:5]))}...{r['grid_10'][-1]}</code>\n"
         )
     reply = "\n".join(lines)
 
 
-    await context.bot.send_message(
+    await safe_send(context.bot,
         chat_id=chat_id,
         text=reply,
         parse_mode="HTML",
@@ -1526,12 +2012,12 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if not context.args:
-        await context.bot.send_message(chat_id, "Ví dụ: /deepcoin BTC")
+        await safe_send(context.bot, chat_id, "Ví dụ: /deepcoin BTC")
         return
     coin = context.args[0].upper()
     if not coin.endswith("-USDT") and not coin.endswith("-USD"):
         coin = coin + "-USDT"
-    waiting_msg = await context.bot.send_message(chat_id, f"⏳ Đang phân tích sâu cho {coin}...")
+    waiting_msg = await safe_send(context.bot, chat_id, f"⏳ Đang phân tích sâu cho {coin}...")
 
     try:
         avg, details = multi_tf_score(coin, mode="long")
@@ -1561,7 +2047,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text.endswith("-USDT") and not text.endswith("-USD"):
         text = text + "-USDT"
     coin = text
-    waiting_msg = await context.bot.send_message(chat_id, f"⏳ Đang phân tích sâu cho {coin}...")
+    waiting_msg = await safe_send(context.bot, chat_id=chat_id, text=f"⏳ Đang phân tích sâu cho {coin}...")
 
     try:
         avg, details = multi_tf_score(coin, mode="long")
@@ -1583,10 +2069,18 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         news_text = "📰 Tin tức liên quan:\n" + "\n\n".join(news_list)
         ai_news_text = ai_news_analysis(coin, news_list)
         final_text = text_out + "\n\n" + news_text + "\n\n" + ai_news_text + "\n\n" + ai_text
-        await waiting_msg.edit_text(final_text, parse_mode=None)
+        if waiting_msg:
+            await waiting_msg.edit_text(final_text, parse_mode=None)
+        else:
+            await safe_send(context.bot, chat_id=chat_id, text=final_text, parse_mode=None)
     except Exception as e:
         logger.exception(f"text_coin_handler error: {e}")
-        await waiting_msg.edit_text(f"❌ Lỗi khi phân tích {coin}")
+        err_text = f"❌ Lỗi khi phân tích {coin}"
+        if waiting_msg:
+            await waiting_msg.edit_text(err_text)
+        else:
+            await safe_send(context.bot, chat_id=chat_id, text=err_text)
+
 
 async def refresh_markets_stub():
     """
@@ -1602,6 +2096,8 @@ async def refresh_markets_stub():
 # ================== MAIN ==================
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    # Add handlers
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("research", research_handler))
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
@@ -1609,10 +2105,19 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
     logger.info("Bot polling...")
 
-    # background job every 60s
+    # Background job every 60s
     app.job_queue.run_repeating(background_price_checker, interval=60, first=5)
 
+    # Start bot polling
     app.run_polling()
 
 if __name__ == "__main__":
+    # Flask server để Render giữ app sống
+    threading.Thread(
+        target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
+        daemon=True
+    ).start()
+
+    # Bot chạy bằng polling
+    print("🚀 Starting bot in polling mode...")
     main()

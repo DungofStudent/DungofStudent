@@ -603,14 +603,12 @@ def okx_sign_request(method: str, path: str, body: str = ""):
 
 def okx_get_json_signed(endpoint: str, params=None, method="GET"):
     """
-    Gọi API OKX với ký request (API key).
-    endpoint: ví dụ "/api/v5/market/tickers"
+    Signed request tới OKX API.
     """
     base_url = "https://www.okx.com"
     body = ""
     path = endpoint
 
-    # build query string nếu có params
     from urllib.parse import urlencode
     query = ""
     if params and method == "GET":
@@ -619,10 +617,9 @@ def okx_get_json_signed(endpoint: str, params=None, method="GET"):
         import json
         body = json.dumps(params)
 
-    # timestamp
-    timestamp = datetime.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
+    # timestamp ISO8601 với ms
+    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
-    # message cần ký: KHÔNG bao gồm base_url, chỉ path + query
     prehash = f"{timestamp}{method.upper()}{path}{query}{body}"
     sign = hmac.new(
         os.getenv("OKX_API_SECRET").encode(),
@@ -640,10 +637,17 @@ def okx_get_json_signed(endpoint: str, params=None, method="GET"):
     }
 
     url = base_url + path + query
-    r = requests.request(method, url, headers=headers, data=body)
-    r.raise_for_status()
-    return r.json()
 
+    for attempt in range(3):
+        r = requests.request(method, url, headers=headers, data=body, timeout=15)
+        if r.status_code == 403:
+            wait = 2 ** attempt
+            logger.warning(f"403 Forbidden (signed) → thử lại sau {wait}s...")
+            time.sleep(wait)
+            continue
+        r.raise_for_status()
+        return r.json()
+    return {}
 
 def get_ticker_okx(inst: str):
     """

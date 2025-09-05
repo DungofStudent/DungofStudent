@@ -615,26 +615,47 @@ def okx_sign_request(method: str, path: str, body: str = ""):
 
 def okx_get_json_signed(endpoint: str, params=None, method="GET"):
     """
-    Gọi API OKX với ký request (dùng cho private hoặc public khi bị 403).
-    endpoint: VD "/api/v5/market/tickers"
+    Gọi API OKX với ký request (API key).
+    endpoint: ví dụ "/api/v5/market/tickers"
     """
     base_url = "https://www.okx.com"
-    path = endpoint
     body = ""
+    path = endpoint
+
+    # build query string nếu có params
+    from urllib.parse import urlencode
+    query = ""
     if params and method == "GET":
-        # build query string
-        from urllib.parse import urlencode
-        qs = urlencode(params)
-        path = f"{endpoint}?{qs}"
+        query = "?" + urlencode(params)
     elif params and method == "POST":
         import json
         body = json.dumps(params)
 
-    headers = okx_sign_request(method, endpoint, body)
-    url = base_url + path
+    # timestamp
+    timestamp = datetime.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
+
+    # message cần ký: KHÔNG bao gồm base_url, chỉ path + query
+    prehash = f"{timestamp}{method.upper()}{path}{query}{body}"
+    sign = hmac.new(
+        os.getenv("OKX_API_SECRET").encode(),
+        prehash.encode(),
+        hashlib.sha256
+    ).digest()
+    sign_b64 = base64.b64encode(sign).decode()
+
+    headers = {
+        "OK-ACCESS-KEY": os.getenv("OKX_API_KEY"),
+        "OK-ACCESS-SIGN": sign_b64,
+        "OK-ACCESS-TIMESTAMP": timestamp,
+        "OK-ACCESS-PASSPHRASE": os.getenv("OKX_API_PASSPHRASE"),
+        "Content-Type": "application/json",
+    }
+
+    url = base_url + path + query
     r = requests.request(method, url, headers=headers, data=body)
     r.raise_for_status()
     return r.json()
+
 
 def get_ticker_okx(inst: str):
     """

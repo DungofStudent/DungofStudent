@@ -284,34 +284,27 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
         "Accept": "application/json",
         "Referer": "https://www.okx.com/",
         "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
     }
-
-    # Chỉ thêm API key nếu không phải endpoint public
-    if not any(x in url for x in ["/market/", "/public/"]):
-        api_key = os.getenv("OKX_API_KEY")
-        api_passphrase = os.getenv("OKX_API_PASSPHRASE")
-        if api_key:
-            headers["OK-ACCESS-KEY"] = api_key
-        if api_passphrase:
-            headers["OK-ACCESS-PASSPHRASE"] = api_passphrase
-        # Nếu gọi private API mới cần ký (OK-ACCESS-SIGN, OK-ACCESS-TIMESTAMP)
-
     try:
-        r = requests.get(url, params=params, headers=headers, timeout=timeout)
-        if r.status_code == 403:
-            logger.warning("403 Forbidden → thử lại sau 2s...")
-            time.sleep(2)
+        for attempt in range(3):
             r = requests.get(url, params=params, headers=headers, timeout=timeout)
-        r.raise_for_status()
-        j = r.json()
-        if j.get("code") not in (None, "0"):
-            logger.warning(f"OKX non-zero code: {j}")
-        return j
+            if r.status_code == 403:
+                wait = 2 ** attempt
+                logger.warning(f"403 Forbidden → thử lại sau {wait}s...")
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            j = r.json()
+            if j.get("code") not in (None, "0"):
+                logger.warning(f"OKX non-zero code: {j}")
+            return j
+        return {}
     except Exception as e:
         logger.exception(f"OKX request error: {url} {params} {e}")
         return {}
-
-		
+	
 def refresh_markets(limit: int = MAX_SCAN):
     """
     Populate MARKET_MAP with SWAP USDT instruments, prioritizing by 24h quote volume.

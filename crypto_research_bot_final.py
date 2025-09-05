@@ -405,8 +405,8 @@ def get_ohlc_okx(inst: str, bar="1H", limit=100):
     inst_id = MARKET_MAP.get(inst, {}).get("inst_id", f"{inst}-SWAP")
     data = []
 
-    url = "/api/v5/market/candles"
-    params = {"instId": inst_id, "bar": bar, "limit": limit}
+    endpoint = "/api/v5/market/candles"
+    j = okx_get_json_signed(endpoint, params)
 
     try:
         j = okx_get_json("https://www.okx.com" + url, params)

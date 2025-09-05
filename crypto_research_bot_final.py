@@ -601,45 +601,34 @@ def get_news_general(limit: int = 5):
     return ["Không lấy được tin tức thị trường."]
 
 
-def get_news_coin(coin: str, limit: int = 5):
-    sym = coin.upper().replace("-USDT", "").replace("-USD", "")
-    
-    # Thử CryptoPanic
-    try:
-        url = "https://cryptopanic.com/api/v1/posts/"
-        params = {"auth_token": CRYPTOPANIC_KEY, "currencies": sym}
-        r = requests.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("results", [])
-        out = []
-        for a in articles[:limit]:
-            title = a.get("title")
-            link = a.get("url")
-            if title and link:
-                out.append(f"- {title}\n🔗 {link}")
-        if out:
-            return out
-    except Exception as e:
-        logger.warning(f"CryptoPanic coin news error: {e}, dùng fallback CoinStats")
-    
-    # fallback CoinStats
+import datetime as dt
+
+def get_news_today(limit: int = 10):
+    """
+    Lấy tin tức thị trường trong ngày từ CoinStats
+    """
     try:
         url = "https://api.coinstats.app/public/v1/news"
-        r = requests.get(url, params={"skip": 0, "limit": 20}, timeout=15)
+        r = requests.get(url, params={"skip": 0, "limit": 50}, timeout=15)
         r.raise_for_status()
         j = r.json()
         articles = j.get("news", [])
+        today = dt.datetime.utcnow().date()
         out = []
         for a in articles:
             title = a.get("title", "")
             link = a.get("link", "")
-            if sym and title and sym in title.upper():
-                out.append(f"- {title}\n🔗 {link}")
-        return out[:limit] if out else [f"Không có tin tức mới cho {sym}."]
+            pub_ts = a.get("publishedAt")  # timestamp UTC (epoch seconds)
+            if title and link and pub_ts:
+                pub_date = dt.datetime.utcfromtimestamp(pub_ts).date()
+                if pub_date == today:
+                    out.append(f"- {title}\n🔗 {link}")
+            if len(out) >= limit:
+                break
+        return out if out else ["Không có tin tức hôm nay."]
     except Exception as e:
-        logger.exception("CoinStats fallback error")
-        return [f"Không lấy được tin tức cho {coin}."]
+        logger.exception("CoinStats get_news_today error")
+        return ["Không lấy được tin tức hôm nay."]
 
 def get_news_today(limit: int = 10):
     """

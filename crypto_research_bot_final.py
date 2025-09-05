@@ -582,8 +582,7 @@ def okx_sign_request(method: str, path: str, body: str = ""):
         return {}
 
     # timestamp dạng 2025-09-05T03:30:00.000Z
-    timestamp = datetime.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
-
+    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     # message cần ký
     prehash = f"{timestamp}{method.upper()}{path}{body}"
     sign = hmac.new(

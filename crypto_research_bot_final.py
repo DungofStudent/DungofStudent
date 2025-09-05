@@ -143,6 +143,20 @@ FLOW_IMMEDIATE_COOLDOWN = dt.timedelta(minutes=10)  # per (coin,tf,type)
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
 
+BASE_URL = "https://www.okx.com"
+DEFAULT_HEADERS = {
+"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+"Accept": "application/json, text/plain, */*",
+"Accept-Language": "en-US,en;q=0.9",
+"Referer": "https://www.okx.com/",
+"Origin": "https://www.okx.com",
+"Cache-Control": "no-cache",
+"Pragma": "no-cache",
+"Connection": "keep-alive",
+}
+RATE_LIMIT_DELAY = 0.2 # giãn cách giữa các request (200ms)
+MAX_RETRY = 5
+
 LAST_ALERT_TIME = {}
 # Biến toàn cục để theo dõi thời gian gửi tin cuối cùng
 last_sent = None
@@ -275,58 +289,52 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
 # ================== OKX HELPERS ==================
-def refresh_markets(limit: int = MAX_SCAN):
-    """
-    Populate MARKET_MAP with SWAP USDT instruments, prioritizing by 24h quote volume.
-    Dùng public API, có thêm headers để tránh 403.
-    """
+def refresh_markets(limit: int = 50):
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json"
-        }
-
-        # --- fetch instruments ---
-        inst_j = okx_get_json("https://www.okx.com/api/v5/public/instruments",
-                              {"instType": "SWAP"}, headers=headers)
+# instruments
+        inst_j = okx_get_json(BASE_URL + "/api/v5/public/instruments", {"instType": "SWAP"})
         data = inst_j.get("data", []) if inst_j else []
+        if not data:
+            logger.warning("Public instruments API rỗng → fallback signed")
+            inst_j = okx_get_json_signed("/api/v5/public/instruments", {"instType": "SWAP"})
+            data = inst_j.get("data", []) if inst_j else []
 
-        # --- fetch tickers ---
-        tick_j = okx_get_json("https://www.okx.com/api/v5/market/tickers",
-                              {"instType": "SWAP"}, headers=headers)
+
+# tickers
+        tick_j = okx_get_json(BASE_URL + "/api/v5/market/tickers", {"instType": "SWAP"})
         tickers = tick_j.get("data", []) if tick_j else []
+        if not tickers:
+            logger.warning("Public tickers API rỗng → fallback signed")
+            tick_j = okx_get_json_signed("/api/v5/market/tickers", {"instType": "SWAP"})
+            tickers = tick_j.get("data", []) if tick_j else []
 
-        # Map tickers by instId
+
         tick_map = {t.get("instId"): t for t in tickers}
-
         out = {}
+
+
         for item in data:
             inst_id = item.get("instId", "")
             if not inst_id.endswith("USDT-SWAP"):
                 continue
 
-            base = item.get("uly")  # underlying (e.g., BTC-USDT)
+
+            base = item.get("uly")
             if not base or not base.endswith("USDT"):
                 continue
+
+
             coin_id = base
-
             t = tick_map.get(inst_id, {})
-            last = t.get("last")
-            vol_quote = t.get("volCcy24h")
-            vol_base = t.get("vol24h")
-
             try:
-                last = float(last) if last is not None else None
+                last = float(t.get("last")) if t.get("last") else None
             except:
                 last = None
             try:
-                vol_quote = float(vol_quote) if vol_quote is not None else 0.0
+                vol_quote = float(t.get("volCcy24h", 0))
             except:
                 vol_quote = 0.0
-            try:
-                vol_base = float(vol_base) if vol_base is not None else 0.0
-            except:
-                vol_base = 0.0
+
 
             out[coin_id] = {
                 "inst_id": inst_id,
@@ -335,73 +343,60 @@ def refresh_markets(limit: int = MAX_SCAN):
                 "category": "SWAP",
                 "current_price": last,
                 "vol_quote_24h": vol_quote,
-                "vol_base_24h": vol_base,
             }
 
-        # top theo volume
+
         liquid = sorted(out.values(), key=lambda x: x.get("vol_quote_24h", 0.0), reverse=True)
         liquid = liquid[:limit]
 
-        # finalize
+
         global MARKET_MAP, COINS_LIST
         MARKET_MAP = {f"{x['base']}-USDT": x for x in liquid}
         COINS_LIST = list(MARKET_MAP.keys())
 
-        logger.info(f"Refreshed markets: {len(COINS_LIST)} USDT SWAP coins (top by 24h quote vol)")
 
+        logger.info(f"Refreshed markets: {len(COINS_LIST)} USDT SWAP coins")
+        time.sleep(RATE_LIMIT_DELAY)
     except Exception:
         logger.exception("refresh_markets error")
 
 def okx_get_json(url: str, params=None, timeout: int = 15):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.okx.com/",
-        "Origin": "https://www.okx.com",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "Connection": "keep-alive",
-    }
-    try:
-        for attempt in range(5):
-            r = requests.get(url, params=params, headers=headers, timeout=timeout)
-            if r.status_code == 403:
+    for attempt in range(MAX_RETRY):
+        try:
+            r = requests.get(url, params=params, headers=DEFAULT_HEADERS, timeout=timeout)
+            if r.status_code in (403, 429, 500, 502, 503):
                 wait = 2 ** attempt
-                logger.warning(f"403 Forbidden → thử lại sau {wait}s...")
+                logger.warning(f"{r.status_code} từ OKX public API → thử lại sau {wait}s...")
                 time.sleep(wait)
                 continue
             r.raise_for_status()
             return r.json()
-        return {}
-    except Exception as e:
-        logger.exception(f"OKX request error: {url} {params} {e}")
-        return {}
+        except Exception as e:
+            logger.exception(f"OKX public request error: {url} {params} {e}")
+            time.sleep(2 ** attempt)
+    return {}
 
 
 def get_ohlc_okx(symbol: str, bar="15m", limit=100):
-    """
-    Lấy dữ liệu OHLC từ OKX (candles).
-    Dùng public API, retry nếu bị 403. Không fallback sang signed vì không hỗ trợ.
-    """
     try:
         endpoint = "/api/v5/market/candles"
         inst_id = f"{symbol}-SWAP"
         params = {"instId": inst_id, "bar": bar, "limit": limit}
 
-        for attempt in range(5):
-            j = okx_get_json("https://www.okx.com" + endpoint,
-                             params=params,
-                             headers={"User-Agent": f"MyBot/{random.randint(1000,9999)}"})
+
+        j = okx_get_json(BASE_URL + endpoint, params=params)
+        data = j.get("data", []) if j else []
+
+
+        if not data:
+            logger.warning(f"Public candles API rỗng → fallback signed {inst_id}")
+            j = okx_get_json_signed(endpoint, params)
             data = j.get("data", []) if j else []
-            if data:
-                break
-            wait = 2 ** attempt
-            logger.warning(f"Public candles retry {inst_id} sau {wait}s...")
-            time.sleep(wait)
+
 
         if not data:
             return None
+
 
         df = pd.DataFrame(data, columns=[
             "ts", "open", "high", "low", "close",
@@ -411,6 +406,8 @@ def get_ohlc_okx(symbol: str, bar="15m", limit=100):
         df = df.sort_values("ts").reset_index(drop=True)
         df[["open", "high", "low", "close", "vol"]] = df[["open", "high", "low", "close", "vol"]].astype(float)
 
+
+        time.sleep(RATE_LIMIT_DELAY)
         return df
     except Exception:
         logger.exception("get_ohlc_okx error")
@@ -597,115 +594,77 @@ def okx_sign_request(method: str, path: str, body: str = ""):
         "Content-Type": "application/json"
     }
 
-def okx_get_json_signed(endpoint: str, params=None, method: str = "GET", timeout: int = 15):
-    """
-    Gọi API OKX có ký (API key).
-    - endpoint: ví dụ "/api/v5/market/tickers"
-    - params: dict query/body
-    Tự động retry khi 403/5xx, trả {} nếu lỗi.
-    """
-    import json
-    from urllib.parse import urlencode
-
-    base_url = "https://www.okx.com"
+def okx_get_json_signed(endpoint: str, params=None, method="GET"):
     path = endpoint
     query = ""
     body = ""
-
-    if method.upper() == "GET" and params:
+    if params and method.upper() == "GET":
         query = "?" + urlencode(params)
-    elif method.upper() in ("POST", "PUT") and params is not None:
+    elif params and method.upper() == "POST":
         body = json.dumps(params)
 
-    # build headers with OKX auth
-    def _signed_headers(ts: str) -> dict:
-        prehash = f"{ts}{method.upper()}{path}{query}{body}"
-        sign = hmac.new(os.getenv("OKX_API_SECRET", "").encode(), prehash.encode(), hashlib.sha256).digest()
-        sign_b64 = base64.b64encode(sign).decode()
-        return {
-            "OK-ACCESS-KEY": os.getenv("OKX_API_KEY", ""),
-            "OK-ACCESS-SIGN": sign_b64,
-            "OK-ACCESS-TIMESTAMP": ts,
-            "OK-ACCESS-PASSPHRASE": os.getenv("OKX_API_PASSPHRASE", ""),
-            "Content-Type": "application/json",
-            # Một số endpoint market vẫn cho public nhưng thêm UA giúp giảm 403
-            "User-Agent": "Mozilla/5.0",
-            "Accept": "application/json",
-            "Referer": "https://www.okx.com/",
-        }
 
-    url = base_url + path + query
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    prehash = f"{timestamp}{method.upper()}{path}{query}{body}"
+    sign = hmac.new(
+        os.getenv("OKX_API_SECRET").encode(),
+        prehash.encode(),
+        hashlib.sha256
+    ).digest()
+    sign_b64 = base64.b64encode(sign).decode()
 
-    for attempt in range(3):
+
+    headers = DEFAULT_HEADERS.copy()
+    headers.update({
+        "OK-ACCESS-KEY": os.getenv("OKX_API_KEY"),
+        "OK-ACCESS-SIGN": sign_b64,
+        "OK-ACCESS-TIMESTAMP": timestamp,
+        "OK-ACCESS-PASSPHRASE": os.getenv("OKX_API_PASSPHRASE"),
+        "Content-Type": "application/json",
+    })
+
+
+    url = BASE_URL + path + query
+    for attempt in range(MAX_RETRY):
         try:
-            ts = dt.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
-            headers = _signed_headers(ts)
-            r = requests.request(method.upper(), url, headers=headers, data=body, timeout=timeout)
-            if r.status_code in (403, 429, 500, 502, 503, 504):
+            r = requests.request(method, url, headers=headers, data=body)
+            if r.status_code in (403, 429, 500, 502, 503):
                 wait = 2 ** attempt
                 logger.warning(f"Signed request {url} → {r.status_code}. Thử lại sau {wait}s...")
                 time.sleep(wait)
                 continue
             r.raise_for_status()
-            j = r.json()
-            if isinstance(j, dict) and j.get("code") not in (None, "0"):
-                logger.warning(f"OKX signed non-zero code: {j}")
-            return j
+            return r.json()
         except Exception as e:
             logger.exception(f"OKX signed request error: {url} {params} {e}")
             time.sleep(2 ** attempt)
     return {}
-def get_ticker_okx(inst: str):
-    """
-    Lấy ticker cho 1 instrument.
-    """
-    inst_id = MARKET_MAP.get(inst, {}).get("inst_id", f"{inst}-SWAP")
-    data = {}
 
-    url = "/api/v5/market/ticker"
-    params = {"instId": inst_id}
-
+def get_ticker_okx(symbol: str):
     try:
-        j = okx_get_json("https://www.okx.com" + url, params)
-        data_list = j.get("data", []) if j else []
-        if not data_list:
-            logger.warning(f"Public ticker API rỗng → fallback signed {inst_id}")
-            j = okx_get_json_signed(url, params)
-            data_list = j.get("data", []) if j else []
-        if data_list:
-            data = data_list[0]
+        endpoint = "/api/v5/market/ticker"
+        params = {"instId": f"{symbol}-SWAP"}
+        j = okx_get_json(BASE_URL + endpoint, params=params)
+        if not j or not j.get("data"):
+            j = okx_get_json_signed(endpoint, params)
+        time.sleep(RATE_LIMIT_DELAY)
+        return j.get("data", [])[0] if j and j.get("data") else {}
     except Exception:
-        logger.warning(f"Public ticker API lỗi → fallback signed {inst_id}")
-        j = okx_get_json_signed(url, params)
-        data_list = j.get("data", []) if j else []
-        if data_list:
-            data = data_list[0]
+        logger.exception("get_ticker_okx error")
+        return {}
 
-    return data
-def get_orderbook_okx(inst: str, depth=5):
-    """
-    Lấy orderbook cho 1 instrument.
-    """
-    inst_id = MARKET_MAP.get(inst, {}).get("inst_id", f"{inst}-SWAP")
-    data = {}
-
-    url = "/api/v5/market/books"
-    params = {"instId": inst_id, "sz": depth}
-
+def get_orderbook_okx(symbol: str, depth=20):
     try:
-        j = okx_get_json("https://www.okx.com" + url, params)
-        data = j.get("data", [])[0] if j and j.get("data") else {}
-        if not data:
-            logger.warning(f"Public orderbook API rỗng → fallback signed {inst_id}")
-            j = okx_get_json_signed(url, params)
-            data = j.get("data", [])[0] if j and j.get("data") else {}
+        endpoint = "/api/v5/market/books"
+        params = {"instId": f"{symbol}-SWAP", "sz": depth}
+        j = okx_get_json(BASE_URL + endpoint, params=params)
+        if not j or not j.get("data"):
+            j = okx_get_json_signed(endpoint, params)
+        time.sleep(RATE_LIMIT_DELAY)
+        return j.get("data", [])[0] if j and j.get("data") else {}
     except Exception:
-        logger.warning(f"Public orderbook API lỗi → fallback signed {inst_id}")
-        j = okx_get_json_signed(url, params)
-        data = j.get("data", [])[0] if j and j.get("data") else {}
-
-    return data
-
+        logger.exception("get_orderbook_okx error")
+        return {}
 
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):

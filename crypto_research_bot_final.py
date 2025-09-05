@@ -2077,11 +2077,12 @@ def main():
 
     # Start bot polling
     app.run_webhook(
-    listen="0.0.0.0",
-    port=int(os.environ.get("PORT", 8080)),
-    url_path=TELEGRAM_TOKEN,
-    webhook_url=webhook_url
-)
+        listen="0.0.0.0",
+        port=int(os.environ.get("PORT", 8080)),
+        url_path=TELEGRAM_TOKEN,
+        webhook_url=f"https://{os.environ.get('RENDER_EXTERNAL_URL', 'your-app.onrender.com')}/{TELEGRAM_TOKEN}"
+    )
+
 
 if __name__ == "__main__":
     # Flask server để Render giữ app sống

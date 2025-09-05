@@ -352,22 +352,21 @@ def refresh_markets(limit: int = MAX_SCAN):
     except Exception:
         logger.exception("refresh_markets error")
 
-def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/119.0.0.0 Safari/537.36"
-        ),
+def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, headers: dict | None = None):
+    default_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept": "application/json",
         "Referer": "https://www.okx.com/",
         "Accept-Language": "en-US,en;q=0.9",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
     }
+    if headers:
+        default_headers.update(headers)
+
     try:
         for attempt in range(3):
-            r = requests.get(url, params=params, headers=headers, timeout=timeout)
+            r = requests.get(url, params=params, headers=default_headers, timeout=timeout)
             if r.status_code == 403:
                 wait = 2 ** attempt
                 logger.warning(f"403 Forbidden → thử lại sau {wait}s...")

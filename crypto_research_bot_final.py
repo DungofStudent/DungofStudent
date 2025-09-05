@@ -372,8 +372,14 @@ def get_ohlc_okx(symbol="BTC-USDT", bar="1H", limit=200):
     Automatically maps symbol (e.g. BTC-USDT) to OKX instId (e.g. BTC-USDT-SWAP).
     """
     try:
-        # Lấy inst_id từ MARKET_MAP nếu có, fallback dùng symbol
-        inst_id = MARKET_MAP.get(symbol, {}).get("inst_id", symbol)
+        # Ưu tiên lấy inst_id từ MARKET_MAP
+        inst_id = MARKET_MAP.get(symbol, {}).get("inst_id")
+        if not inst_id:
+            # fallback: thêm -SWAP nếu chưa có
+            if not symbol.endswith("-SWAP"):
+                inst_id = f"{symbol}-SWAP"
+            else:
+                inst_id = symbol
 
         url = "https://www.okx.com/api/v5/market/candles"
         params = {"instId": inst_id, "bar": bar, "limit": limit}
@@ -381,27 +387,19 @@ def get_ohlc_okx(symbol="BTC-USDT", bar="1H", limit=200):
         data = j.get("data", []) if j else []
         if not data:
             return pd.DataFrame()
-
+        if r.status_code == 403:
+            time.sleep(1)
+            r = requests.get(url, params=params, headers=headers, timeout=timeout)
         df = pd.DataFrame(data)
-        df = df.rename(columns={
-            0: "ts", 1: "open", 2: "high", 3: "low", 4: "close", 5: "vol"
-        })
+        df = df.rename(columns={0: "ts", 1: "open", 2: "high", 3: "low", 4: "close", 5: "vol"})
         for c in ["open", "high", "low", "close", "vol"]:
-            if c in df.columns:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-        try:
-            df["ts"] = pd.to_datetime(df["ts"].astype(float), unit="ms", utc=True)
-        except Exception:
-            try:
-                df["ts"] = pd.to_datetime(df["ts"], utc=True)
-            except Exception:
-                pass
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df["ts"] = pd.to_datetime(df["ts"].astype(float), unit="ms", utc=True)
         df = df.sort_values("ts").reset_index(drop=True)
         return df[["ts", "open", "high", "low", "close", "vol"]]
     except Exception as e:
         logger.error(f"Error get_ohlc_okx {symbol}: {e}")
         return pd.DataFrame()
-
 
 def detect_flow_signals(coin: str):
     """

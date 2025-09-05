@@ -385,27 +385,26 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, header
 def get_ohlc_okx(symbol: str, bar="15m", limit=100):
     """
     Lấy dữ liệu OHLC từ OKX (candles).
-    Thử public API trước, nếu rỗng thì fallback sang signed API.
-    Return: pandas.DataFrame hoặc None nếu fail.
+    Dùng public API, retry nếu bị 403. Không fallback sang signed vì không hỗ trợ.
     """
     try:
         endpoint = "/api/v5/market/candles"
         inst_id = f"{symbol}-SWAP"
         params = {"instId": inst_id, "bar": bar, "limit": limit}
 
-        # thử public trước
-        j = okx_get_json("https://www.okx.com" + endpoint,
-                         params=params,
-                         headers={"User-Agent": "Mozilla/5.0"})
-        data = j.get("data", []) if j else []
-
-        if not data:
-            logger.warning(f"Public candles API rỗng → fallback signed {inst_id}")
-            j = okx_get_json_signed(endpoint, params)
+        for attempt in range(5):
+            j = okx_get_json("https://www.okx.com" + endpoint,
+                             params=params,
+                             headers={"User-Agent": f"MyBot/{random.randint(1000,9999)}"})
             data = j.get("data", []) if j else []
+            if data:
+                break
+            wait = 2 ** attempt
+            logger.warning(f"Public candles retry {inst_id} sau {wait}s...")
+            time.sleep(wait)
 
         if not data:
-            return None  # lỗi → return None
+            return None
 
         df = pd.DataFrame(data, columns=[
             "ts", "open", "high", "low", "close",

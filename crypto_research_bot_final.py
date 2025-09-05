@@ -43,6 +43,9 @@ from telegram.ext import (
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
 
+OKX_BASE = "https://www.okx.com/api/v5"
+PROXY = None 
+
 #=================== Hàm AI tóm tắt tin tức bằng Groq LLM==============
 from groq import Groq
 def ai_summarize(prompt: str) -> str:
@@ -494,14 +497,15 @@ def fetch_okx(url, params=None, retries=3, timeout=10):
         "Accept": "application/json",
         "Referer": "https://www.okx.com/"
     }
+
     for attempt in range(retries):
         try:
-            r = requests.get(url, params=params, headers=headers, timeout=timeout)
+            r = requests.get(url, params=params, headers=headers, timeout=timeout, proxies={"http": PROXY, "https": PROXY} if PROXY else None)
             r.raise_for_status()
             return r.json()
         except requests.exceptions.HTTPError as e:
             if r.status_code == 403:
-                logger.warning(f"403 Forbidden, retrying ({attempt+1}/{retries})")
+                logger.warning(f"403 Forbidden, retrying ({attempt+1}/{retries}) {url} {params}")
                 time.sleep(1.5)
             else:
                 logger.error(f"OKX HTTPError: {url} {params} {e}")
@@ -510,25 +514,45 @@ def fetch_okx(url, params=None, retries=3, timeout=10):
             logger.error(f"OKX request error: {url} {params} {e}")
             time.sleep(1.0)
     return None
+
+# Lấy danh sách tickers SWAP
 def fetch_tickers_okx():
     url = f"{OKX_BASE}/market/tickers"
     params = {"instType": "SWAP"}
     data = fetch_okx(url, params)
     return data.get("data", []) if data else []
 
+# Lấy danh sách instruments SWAP
 def fetch_instruments_okx():
     url = f"{OKX_BASE}/public/instruments"
     params = {"instType": "SWAP"}
     data = fetch_okx(url, params)
     return data.get("data", []) if data else []
 
-def fetch_candles_okx(inst_id: str, bar: str = "1H"):
-    """Lấy dữ liệu nến (candlestick) từ OKX."""
+# Lấy nến (candlestick) cho 1 coin
+def fetch_candles_okx(inst_id: str, bar: str = "1H", limit: int = 200):
     url = f"{OKX_BASE}/market/candles"
-    params = {"instId": inst_id, "bar": bar}
+    params = {"instId": inst_id, "bar": bar, "limit": limit}
     data = fetch_okx(url, params)
+    # Delay nhẹ để tránh spam
+    time.sleep(0.2)
     return data.get("data", []) if data else []
-	
+
+# Ví dụ sử dụng API key (tùy chọn)
+def fetch_okx_with_key(url, params=None, api_key="", api_pass="", api_secret=""):
+    headers = {
+        "OK-ACCESS-KEY": api_key,
+        "OK-ACCESS-PASSPHRASE": api_pass,
+        # Bạn có thể thêm signature + timestamp nếu gọi private endpoints
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+        "Referer": "https://www.okx.com/"
+    }
+    r = requests.get(url, params=params, headers=headers)
+    r.raise_for_status()
+    return r.json()
+
+
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
     if len(df) < 2:

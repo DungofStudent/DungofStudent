@@ -94,15 +94,13 @@ logger = logging.getLogger("crypto_bot_opt")
 
 request = HTTPXRequest(
     connect_timeout=30,
-    read_timeout=30,
-    request_timeout=30
+    read_timeout=30
 )
 
 app = Application.builder() \
     .token(TELEGRAM_TOKEN) \
     .request(request) \
     .build()
-
 # ================== GLOBAL STATE ==================
 COINS_LIST = []
 MARKET_MAP = {}   # key: "BTC-USDT", value: dict(info...)

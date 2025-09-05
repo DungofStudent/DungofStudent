@@ -39,7 +39,7 @@ import asyncio
 
 from telegram import Bot
 from telegram.ext import Application
-
+from telegram.error import NetworkError, TimedOut
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
@@ -101,6 +101,7 @@ app = Application.builder() \
     .token(TELEGRAM_TOKEN) \
     .request(request) \
     .build()
+
 # ================== GLOBAL STATE ==================
 COINS_LIST = []
 MARKET_MAP = {}   # key: "BTC-USDT", value: dict(info...)
@@ -296,9 +297,16 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
 async def error_handler(update, context):
-    logger.error("Update %s gây lỗi %s", update, context.error)
-app.add_error_handler(error_handler)
+    try:
+        raise context.error
+    except TimedOut:
+        logger.warning("⚠️ Telegram timeout, thử lại sau.")
+    except NetworkError as e:
+        logger.warning(f"⚠️ Lỗi mạng Telegram: {e}")
+    except Exception as e:
+        logger.exception(f"❌ Lỗi không xác định: {e}")
 
+app.add_error_handler(error_handler)
 # ================== OKX HELPERS ==================
 def refresh_markets(limit: int = 50):
     try:
@@ -778,21 +786,40 @@ import logging
 
 async def safe_send(bot, chat_id, text, **kwargs):
     MAX_LEN = 4000
-    # Nếu text None hoặc rỗng → thay bằng thông báo fallback
+
+    # Nếu text None hoặc rỗng → fallback
     if not text or not str(text).strip():
         text = "⚠️ Không có dữ liệu để hiển thị."
 
+    # Cắt nếu quá dài
     if len(text) > MAX_LEN:
         text = text[:MAX_LEN] + "\n... (cắt bớt)"
-    try:
-        # Escape toàn bộ text trước khi gửi (khi dùng HTML)
-        if kwargs.get("parse_mode") == "HTML":
-            text = html.escape(text)
-        return await bot.send_message(chat_id=chat_id, text=text, **kwargs)
-    except Exception as e:
-        logging.error(f"send_message failed: {e}")
-        return None
 
+    # Retry tối đa 3 lần nếu gặp lỗi mạng
+    for attempt in range(3):
+        try:
+            # Escape chỉ khi cần, nhưng giữ format HTML/Markdown nếu có
+            if kwargs.get("parse_mode") == "HTML":
+                # Nếu bạn muốn giữ format thì KHÔNG escape toàn bộ
+                # chỉ escape input user thôi (nếu có).
+                # Ở đây mình để nguyên vì bạn đang escape cứng.
+                text = html.escape(text)
+
+            return await bot.send_message(chat_id=chat_id, text=text, **kwargs)
+
+        except TimedOut:
+            logging.warning(f"⏳ Timeout khi gửi tin nhắn (lần {attempt+1}/3), thử lại...")
+            await asyncio.sleep(2)
+
+        except NetworkError as e:
+            logging.warning(f"⚠️ Lỗi mạng khi gửi tin (lần {attempt+1}/3): {e}")
+            await asyncio.sleep(2)
+
+        except Exception as e:
+            logging.error(f"❌ Gửi tin thất bại: {e}")
+            break
+
+    return None
 async def safe_edit(message, text, **kwargs):
     MAX_LEN = 4000
     # Nếu text None hoặc rỗng → thay bằng thông báo fallback

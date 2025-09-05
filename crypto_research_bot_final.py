@@ -253,16 +253,36 @@ def okx_get_json(endpoint: str, params: dict | None = None, timeout: int = 15):
 def refresh_markets(limit: int = MAX_SCAN):
     """
     Populate MARKET_MAP with SWAP USDT instruments, prioritizing by 24h quote volume.
-    We fetch both instrument meta and tickers to get current price + 24h volumes.
+    Thử gọi public API trước, nếu fail thì fallback sang signed API.
     """
     try:
-        # 1) Instruments (SWAP)
-        inst_j = okx_get_json("/api/v5/public/instruments", {"instType": "SWAP"})
-        data = inst_j.get("data", []) if inst_j else []
+        # --- fetch instruments ---
+        data = []
+        try:
+            inst_j = okx_get_json("https://www.okx.com/api/v5/public/instruments", {"instType": "SWAP"})
+            data = inst_j.get("data", []) if inst_j else []
+            if not data:
+                logger.warning("Public instruments API trả rỗng → fallback signed")
+                inst_j = okx_get_json_signed("/api/v5/public/instruments", {"instType": "SWAP"})
+                data = inst_j.get("data", []) if inst_j else []
+        except Exception:
+            logger.warning("Public instruments API lỗi → fallback signed")
+            inst_j = okx_get_json_signed("/api/v5/public/instruments", {"instType": "SWAP"})
+            data = inst_j.get("data", []) if inst_j else []
 
-        # 2) Tickers (SWAP)
-        tick_j = okx_get_json("/api/v5/market/tickers", {"instType": "SWAP"})
-        tickers = tick_j.get("data", []) if tick_j else []
+        # --- fetch tickers ---
+        tickers = []
+        try:
+            tick_j = okx_get_json("https://www.okx.com/api/v5/market/tickers", {"instType": "SWAP"})
+            tickers = tick_j.get("data", []) if tick_j else []
+            if not tickers:
+                logger.warning("Public tickers API trả rỗng → fallback signed")
+                tick_j = okx_get_json_signed("/api/v5/market/tickers", {"instType": "SWAP"})
+                tickers = tick_j.get("data", []) if tick_j else []
+        except Exception:
+            logger.warning("Public tickers API lỗi → fallback signed")
+            tick_j = okx_get_json_signed("/api/v5/market/tickers", {"instType": "SWAP"})
+            tickers = tick_j.get("data", []) if tick_j else []
 
         # Map tickers by instId for quick join
         tick_map = {t.get("instId"): t for t in tickers}
@@ -270,20 +290,18 @@ def refresh_markets(limit: int = MAX_SCAN):
         out = {}
         for item in data:
             inst_id = item.get("instId", "")
-            # We want *USDT-SWAP* only
             if not inst_id.endswith("USDT-SWAP"):
                 continue
 
             base = item.get("uly")  # underlying (e.g., BTC-USDT)
             if not base or not base.endswith("USDT"):
                 continue
-            coin_id = base  # e.g., BTC-USDT (without -SWAP)
+            coin_id = base  # e.g., BTC-USDT
 
             t = tick_map.get(inst_id, {})
-            # OKX fields: last, bidPx, askPx, vol24h, volCcy24h, high24h, low24h, sodUtc8
             last = t.get("last")
-            vol_quote = t.get("volCcy24h")  # quote currency volume (USDT)
-            vol_base = t.get("vol24h")      # base volume (contracts)
+            vol_quote = t.get("volCcy24h")  # volume in quote (USDT)
+            vol_base = t.get("vol24h")      # base volume
 
             try:
                 last = float(last) if last is not None else None
@@ -316,10 +334,12 @@ def refresh_markets(limit: int = MAX_SCAN):
         global MARKET_MAP, COINS_LIST
         MARKET_MAP = {f"{x['base']}-USDT": x for x in liquid}
         COINS_LIST = list(MARKET_MAP.keys())
+
         logger.info(f"Refreshed markets: {len(COINS_LIST)} USDT SWAP coins (top by 24h quote vol)")
 
     except Exception:
         logger.exception("refresh_markets error")
+
 
 def get_ohlc_okx(instId: str, bar: str = "1H", limit: int = 100) -> pd.DataFrame:
     """

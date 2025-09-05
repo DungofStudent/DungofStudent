@@ -2074,14 +2074,17 @@ def main():
     app.job_queue.run_repeating(background_price_checker, interval=60, first=5)
 
     # Webhook URL cho Render
+    # Lấy URL từ Render
     render_url = os.environ.get("RENDER_EXTERNAL_URL", "your-app.onrender.com")
-# Nếu biến đã có "https://" thì không thêm nữa
+
+# Nếu biến không bắt đầu bằng http thì thêm https://
     if not render_url.startswith("http"):
         render_url = "https://" + render_url
 
+# Webhook URL chuẩn
     webhook_url = f"{render_url}/{TELEGRAM_TOKEN}"
-    print(f"🔗 Setting webhook to: {webhook_url}")
 
+    print(f"🔗 Setting webhook to: {webhook_url}")
     # Start bot bằng webhook
     app.run_webhook(
         listen="0.0.0.0",
@@ -2089,7 +2092,6 @@ def main():
         url_path=TELEGRAM_TOKEN,
         webhook_url=webhook_url
     )
-
 
 if __name__ == "__main__":
     # Flask server để Render giữ app sống (nếu bạn dùng Flask để healthcheck)

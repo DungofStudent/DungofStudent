@@ -652,8 +652,15 @@ async def detect_flow_multi_tf(symbol: str):
         return {"inflow": False, "outflow": False, "tf": None, "details": {}}
 
 #=========== message ===========
+import html
+import logging
+
 async def safe_send(bot, chat_id, text, **kwargs):
     MAX_LEN = 4000
+    # Nếu text None hoặc rỗng → thay bằng thông báo fallback
+    if not text or not str(text).strip():
+        text = "⚠️ Không có dữ liệu để hiển thị."
+
     if len(text) > MAX_LEN:
         text = text[:MAX_LEN] + "\n... (cắt bớt)"
     try:
@@ -667,13 +674,16 @@ async def safe_send(bot, chat_id, text, **kwargs):
 
 async def safe_edit(message, text, **kwargs):
     MAX_LEN = 4000
+    # Nếu text None hoặc rỗng → thay bằng thông báo fallback
+    if not text or not str(text).strip():
+        text = "⚠️ Không có dữ liệu để hiển thị."
+
     if len(text) > MAX_LEN:
         text = text[:MAX_LEN] + "\n... (cắt bớt)"
     try:
         return await message.edit_text(text, **kwargs)
     except Exception:
         return await message.reply_text(text, **kwargs)
-
 
 # ================== NEWS API ==================
 LAST_NEWS_CACHE = []

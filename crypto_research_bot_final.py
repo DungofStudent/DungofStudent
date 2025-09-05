@@ -658,7 +658,7 @@ def get_news_today(limit: int = 10):
             link = a.get("link", "")
             pub_ts = a.get("publishedAt")  # timestamp UTC
             if title and link and pub_ts:
-                pub_date = datetime.utcfromtimestamp(pub_ts).date()
+                pub_date = datetime.fromtimestamp(pub_ts, tz=timezone.utc).date()
                 if pub_date == today:
                     out.append(f"- {title}\n🔗 {link}")
             if len(out) >= limit:

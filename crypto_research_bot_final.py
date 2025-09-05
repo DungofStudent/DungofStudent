@@ -659,8 +659,7 @@ def okx_get_json_signed(endpoint: str, params=None, method: str = "GET", timeout
             logger.exception(f"OKX signed request error: {url} {params} {e}")
             time.sleep(2 ** attempt)
     return {}
-def 
-get_ticker_okx(inst: str):
+def get_ticker_okx(inst: str):
     """
     Lấy ticker cho 1 instrument.
     """

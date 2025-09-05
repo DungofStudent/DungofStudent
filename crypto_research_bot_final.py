@@ -95,6 +95,7 @@ app = Application.builder() \
     .token(TELEGRAM_TOKEN) \
     .connect_timeout(30) \
     .read_timeout(30) \
+    .request_timeout(30) \
     .build()
 
 # ================== GLOBAL STATE ==================

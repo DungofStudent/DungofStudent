@@ -22,6 +22,7 @@ import pandas_ta as ta
 import matplotlib.pyplot as plt
 import logging
 import threading
+import time
 from io import BytesIO
 from datetime import datetime, timedelta, timezone
 import html
@@ -483,16 +484,32 @@ def _normalize_okx_candles_to_df(data: List[List[Any]]) -> pd.DataFrame:
     df = df.sort_values("ts").reset_index(drop=True)
     return df[["ts", "open", "high", "low", "close", "vol"]]
 
-def fetch_okx(url, params=None):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}  # fix 403
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        logger.error(f"OKX request error: {url} {params} {e}")
-        return None
-
+def fetch_okx(url, params=None, retries=3, timeout=10):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/119.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+        "Referer": "https://www.okx.com/"
+    }
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=timeout)
+            r.raise_for_status()
+            return r.json()
+        except requests.exceptions.HTTPError as e:
+            if r.status_code == 403:
+                logger.warning(f"403 Forbidden, retrying ({attempt+1}/{retries})")
+                time.sleep(1.5)
+            else:
+                logger.error(f"OKX HTTPError: {url} {params} {e}")
+                break
+        except Exception as e:
+            logger.error(f"OKX request error: {url} {params} {e}")
+            time.sleep(1.0)
+    return None
 def fetch_tickers_okx():
     url = f"{OKX_BASE}/market/tickers"
     params = {"instType": "SWAP"}

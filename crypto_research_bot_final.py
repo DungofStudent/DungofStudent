@@ -2072,6 +2072,8 @@ def main():
 
     # Background job every 60s
     app.job_queue.run_repeating(background_price_checker, interval=60, first=5)
+	webhook_url = f"https://{render_url}/{TELEGRAM_TOKEN}"
+    print(f"🔗 Setting webhook to: {webhook_url}")
 
     # Start bot polling
     app.run_webhook(

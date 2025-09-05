@@ -397,39 +397,43 @@ def refresh_markets(limit: int = MAX_SCAN):
         logger.exception("refresh_markets error")
 
 
-def get_ohlc_okx(inst: str, bar="1H", limit=100):
+def get_ohlc_okx(symbol: str, bar: str = "15m", limit: int = 200):
     """
-    Lấy OHLC (candlestick) từ OKX cho instrument.
-    inst: ví dụ "BTC-USDT"
+    Fetch OHLC data (candles) từ OKX.
+    Thử gọi public API trước, nếu lỗi hoặc rỗng thì fallback sang signed API.
     """
-    inst_id = MARKET_MAP.get(inst, {}).get("inst_id", f"{inst}-SWAP")
-    data = []
-
-    endpoint = "/api/v5/market/candles"
-    j = okx_get_json_signed(endpoint, params)
-
     try:
-        j = okx_get_json("https://www.okx.com" + url, params)
+        inst_id = f"{symbol}-SWAP"
+        endpoint = "/api/v5/market/candles"
+        params = {"instId": inst_id, "bar": bar, "limit": limit}
+
+        j = None
+        try:
+            j = okx_get_json("https://www.okx.com" + endpoint, params)
+            if not j or not j.get("data"):
+                logger.warning(f"Public candles API rỗng → fallback signed {inst_id}")
+                j = okx_get_json_signed(endpoint, params)
+        except Exception:
+            logger.warning(f"Public candles API lỗi → fallback signed {inst_id}")
+            j = okx_get_json_signed(endpoint, params)
+
         data = j.get("data", []) if j else []
         if not data:
-            logger.warning(f"Public candles API rỗng → fallback signed {inst_id}")
-            j = okx_get_json_signed(url, params)
-            data = j.get("data", []) if j else []
+            return None
+
+        import pandas as pd
+        df = pd.DataFrame(data, columns=[
+            "ts", "o", "h", "l", "c", "vol", "volCcy", "volCcyQuote", "confirm"
+        ])
+        df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+        df = df.astype({
+            "o": "float", "h": "float", "l": "float", "c": "float", "vol": "float"
+        })
+        return df.sort_values("ts").reset_index(drop=True)
+
     except Exception:
-        logger.warning(f"Public candles API lỗi → fallback signed {inst_id}")
-        j = okx_get_json_signed(url, params)
-        data = j.get("data", []) if j else []
-
-    import pandas as pd
-    if not data:
-        return pd.DataFrame()
-
-    cols = ["ts", "o", "h", "l", "c", "vol", "volCcy", "volCcyQuote", "confirm"]
-    df = pd.DataFrame(data, columns=cols)
-    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
-    for col in ["o", "h", "l", "c", "vol"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df.sort_values("ts").reset_index(drop=True)
+        logger.exception("get_ohlc_okx error")
+        return None
 
 
 def detect_flow_signals(coin: str):

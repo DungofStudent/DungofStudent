@@ -294,6 +294,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update, context):
     logger.error("Update %s gây lỗi %s", update, context.error)
+app.add_error_handler(error_handler)
 
 # ================== OKX HELPERS ==================
 def refresh_markets(limit: int = 50):
@@ -2064,7 +2065,6 @@ def main():
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     app.add_handler(CallbackQueryHandler(callback_handler))
-	app.add_error_handler(error_handler)
     logger.info("Bot polling...")
 
     # Background job every 60s

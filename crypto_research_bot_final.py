@@ -275,37 +275,6 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
 # ================== OKX HELPERS ==================
-def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/119.0.0.0 Safari/537.36"
-        ),
-        "Accept": "application/json",
-        "Referer": "https://www.okx.com/",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-    }
-    try:
-        for attempt in range(3):
-            r = requests.get(url, params=params, headers=headers, timeout=timeout)
-            if r.status_code == 403:
-                wait = 2 ** attempt
-                logger.warning(f"403 Forbidden → thử lại sau {wait}s...")
-                time.sleep(wait)
-                continue
-            r.raise_for_status()
-            j = r.json()
-            if j.get("code") not in (None, "0"):
-                logger.warning(f"OKX non-zero code: {j}")
-            return j
-        return {}
-    except Exception as e:
-        logger.exception(f"OKX request error: {url} {params} {e}")
-        return {}
-	
 def refresh_markets(limit: int = MAX_SCAN):
     """
     Populate MARKET_MAP with SWAP USDT instruments, prioritizing by 24h quote volume.
@@ -383,38 +352,75 @@ def refresh_markets(limit: int = MAX_SCAN):
     except Exception:
         logger.exception("refresh_markets error")
 
+def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/119.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json",
+        "Referer": "https://www.okx.com/",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    try:
+        for attempt in range(3):
+            r = requests.get(url, params=params, headers=headers, timeout=timeout)
+            if r.status_code == 403:
+                wait = 2 ** attempt
+                logger.warning(f"403 Forbidden → thử lại sau {wait}s...")
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            j = r.json()
+            if j.get("code") not in (None, "0"):
+                logger.warning(f"OKX non-zero code: {j}")
+            return j
+        return {}
+    except Exception as e:
+        logger.exception(f"OKX request error: {url} {params} {e}")
+        return {}
 
-
-def get_ohlc_okx(symbol: str, bar: str = "15m", limit: int = 200):
+def get_ohlc_okx(symbol: str, bar="15m", limit=100):
     """
-    Fetch OHLC data (candles) từ OKX (chỉ dùng public endpoint).
+    Lấy dữ liệu OHLC từ OKX (candles).
+    Thử public API trước, nếu rỗng thì fallback sang signed API.
+    Return: pandas.DataFrame hoặc None nếu fail.
     """
     try:
+        endpoint = "/api/v5/market/candles"
         inst_id = f"{symbol}-SWAP"
-        url = "https://www.okx.com/api/v5/market/candles"
         params = {"instId": inst_id, "bar": bar, "limit": limit}
 
-        j = okx_get_json(url, params)
+        # thử public trước
+        j = okx_get_json("https://www.okx.com" + endpoint,
+                         params=params,
+                         headers={"User-Agent": "Mozilla/5.0"})
         data = j.get("data", []) if j else []
+
         if not data:
-            logger.warning(f"Candles API trả rỗng {inst_id}")
-            return None
+            logger.warning(f"Public candles API rỗng → fallback signed {inst_id}")
+            j = okx_get_json_signed(endpoint, params)
+            data = j.get("data", []) if j else []
 
-        import pandas as pd
+        if not data:
+            return None  # lỗi → return None
+
         df = pd.DataFrame(data, columns=[
-            "ts", "o", "h", "l", "c", "vol", "volCcy", "volCcyQuote", "confirm"
+            "ts", "open", "high", "low", "close",
+            "vol", "volCcy", "volCcyQuote", "confirm"
         ])
-        df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
-        df = df.astype({
-            "o": "float", "h": "float", "l": "float", "c": "float", "vol": "float"
-        })
-        return df.sort_values("ts").reset_index(drop=True)
+        df["ts"] = pd.to_datetime(df["ts"].astype(float), unit="ms")
+        df = df.sort_values("ts").reset_index(drop=True)
+        df[["open", "high", "low", "close", "vol"]] = df[["open", "high", "low", "close", "vol"]].astype(float)
 
+        return df
     except Exception:
         logger.exception("get_ohlc_okx error")
         return None
-
-
+		
 def detect_flow_signals(coin: str):
     """
     Return dict with:
@@ -731,19 +737,21 @@ async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
 async def detect_flow_multi_tf(symbol: str):
     """
     Multi-timeframe flow detection (prefer short TFs).
-    Check FLOW_TFS (3m,15m,1H,4H) in priority order. Return:
+    Check FLOW_TFS (3m,15m,1H,4H) theo thứ tự ưu tiên.
+    Return:
       { 'inflow': bool, 'outflow': bool, 'tf': tf_string, 'details': {...} }
-    Details contains last_vol, mean_prev_vol, price_now, price_change_pct, inflow_strength, outflow_strength
     """
     try:
         for tf in FLOW_TFS:
-            # limit smaller for short timeframes
             lim = 25 if tf in ("3m", "15m") else 50
             df = get_ohlc_okx(symbol, bar=tf, limit=lim)
-            if df.empty or len(df) < 6:
+
+            if df is None or df.empty or len(df) < 6:
                 continue
+
             last = df.iloc[-1]
             prev = df.iloc[:-1]
+
             mean_prev_vol = float(prev["vol"].mean()) if not prev.empty else 0.0
             last_vol = float(last["vol"]) if not pd.isna(last["vol"]) else 0.0
             price_now = float(last["close"])
@@ -777,7 +785,10 @@ async def detect_flow_multi_tf(symbol: str):
                         "outflow_strength": outflow_strength
                     }
                 }
+
+        # nếu không có tín hiệu
         return {"inflow": False, "outflow": False, "tf": None, "details": {}}
+
     except Exception:
         logger.exception(f"detect_flow_multi_tf error for {symbol}")
         return {"inflow": False, "outflow": False, "tf": None, "details": {}}

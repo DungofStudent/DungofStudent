@@ -274,19 +274,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
 # ================== OKX HELPERS ==================
-import os
-import requests
-import time
-import logging
-
-logger = logging.getLogger(__name__)
-
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
-    """
-    Gọi API OKX, tự động thêm headers (User-Agent, Referer, Accept-Language).
-    Nếu có đặt API key trong .env (OKX_API_KEY, OKX_API_SECRET, OKX_API_PASSPHRASE),
-    thì sẽ gửi kèm để tránh bị block.
-    """
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -298,16 +286,15 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
         "Accept-Language": "en-US,en;q=0.9",
     }
 
-    # Nếu user có đặt API key trong môi trường thì thêm vào headers
-    api_key = os.getenv("OKX_API_KEY")
-    api_secret = os.getenv("OKX_API_SECRET")   # có thể cần nếu bạn dùng private API
-    api_passphrase = os.getenv("OKX_API_PASSPHRASE")
-
-    if api_key:
-        headers["OK-ACCESS-KEY"] = api_key
+    # Chỉ thêm API key nếu không phải endpoint public
+    if not any(x in url for x in ["/market/", "/public/"]):
+        api_key = os.getenv("OKX_API_KEY")
+        api_passphrase = os.getenv("OKX_API_PASSPHRASE")
+        if api_key:
+            headers["OK-ACCESS-KEY"] = api_key
         if api_passphrase:
             headers["OK-ACCESS-PASSPHRASE"] = api_passphrase
-        # Lưu ý: với public API không cần ký request → không cần secret
+        # Nếu gọi private API mới cần ký (OK-ACCESS-SIGN, OK-ACCESS-TIMESTAMP)
 
     try:
         r = requests.get(url, params=params, headers=headers, timeout=timeout)
@@ -323,6 +310,7 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
     except Exception as e:
         logger.exception(f"OKX request error: {url} {params} {e}")
         return {}
+
 		
 def refresh_markets(limit: int = MAX_SCAN):
     """

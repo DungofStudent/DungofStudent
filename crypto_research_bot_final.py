@@ -273,9 +273,15 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15):
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0; +https://github.com/DungofStudent)"
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/119.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json",
+            "Referer": "https://www.okx.com/",
         }
-        r = requests.get(url, params=params, headers=headers, timeout=timeout)  # <-- thêm headers vào
+        r = requests.get(url, params=params, headers=headers, timeout=timeout)  # <-- thêm headers
         r.raise_for_status()
         j = r.json()
         if j.get("code") not in (None, "0"):

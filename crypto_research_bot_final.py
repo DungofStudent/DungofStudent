@@ -487,13 +487,11 @@ def fetch_okx(url, params=None):
         logger.error(f"OKX request error: {url} {params} {e}")
         return None
 
-
 def fetch_tickers_okx():
     url = f"{OKX_BASE}/market/tickers"
     params = {"instType": "SWAP"}
     data = fetch_okx(url, params)
     return data.get("data", []) if data else []
-
 
 def fetch_instruments_okx():
     url = f"{OKX_BASE}/public/instruments"
@@ -501,7 +499,13 @@ def fetch_instruments_okx():
     data = fetch_okx(url, params)
     return data.get("data", []) if data else []
 
-
+def fetch_candles_okx(inst_id: str, bar: str = "1H"):
+    """Lấy dữ liệu nến (candlestick) từ OKX."""
+    url = f"{OKX_BASE}/market/candles"
+    params = {"instId": inst_id, "bar": bar}
+    data = fetch_okx(url, params)
+    return data.get("data", []) if data else []
+	
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
     if len(df) < 2:
@@ -1470,8 +1474,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         coin = data.split(":")[1]
         price = MARKET_MAP.get(coin, {}).get("current_price")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
-        txt = f"🔎 {coin}\nGiá: {price} USDT\nThanh khoản 24h: ~{volq:,.0f} USDT"
-        await safe_send(context.bot, chat_id=chat_id, text=msg, reply_markup=coin_actions_markup(coin))
+        txt = f"🔎 {coin}\\nGiá: {price} USDT\\nThanh khoản 24h: ~{volq:,.0f} USDT"
+        await safe_send(context.bot, chat_id=chat_id, text=txt, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("chart:"):
         coin = data.split(":")[1]
@@ -1524,7 +1528,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("news_menu:"):
         coin = data.split(":")[1]
-        await safe_edit("📰 Chọn loại tin tức:", reply_markup=news_menu_markup(coin))
+        await safe_edit(update.callback_query.message, "📰 Chọn loại tin tức:", reply_markup=news_menu_markup(coin))
 
     elif data.startswith("news_market:"):
         coin = data.split(":")[1]
@@ -1545,9 +1549,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await research_handler(update, context, mode="short")
 
     elif data == "bot_dca_btn":
-        await research_dca_bot(update, context)
-
-    elif data == "bot_dca_btn":
         keyboard = [
             [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
             [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
@@ -1558,6 +1559,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Chọn chế độ lọc Bot DCA:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+
     elif data == "bot_dca_bull":
         await research_dca_bot(update, context, mode="bull")
     elif data == "bot_dca_bear":
@@ -1786,12 +1788,12 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if not context.args:
-        await safe_send(context.bot,id, "Ví dụ: /deepcoin BTC")
+        await safe_send(context.bot, chat_id, "Ví dụ: /deepcoin BTC")
         return
     coin = context.args[0].upper()
     if not coin.endswith("-USDT") and not coin.endswith("-USD"):
         coin = coin + "-USDT"
-    waiting_msg = await safe_send(context.bot,id, f"⏳ Đang phân tích sâu cho {coin}...")
+    waiting_msg = await safe_send(context.bot, chat_id, f"⏳ Đang phân tích sâu cho {coin}...")
 
     try:
         avg, details = multi_tf_score(coin, mode="long")
@@ -1882,18 +1884,16 @@ def main():
     # Background job every 60s
     app.job_queue.run_repeating(background_price_checker, interval=60, first=5)
 
-    # Bot chạy polling
+    # Start bot polling
     app.run_polling()
 
 if __name__ == "__main__":
-    import threading
-
-    # Thread 1: Flask server để Render giữ app sống
+    # Flask server để Render giữ app sống
     threading.Thread(
         target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
         daemon=True
     ).start()
 
-    # Thread 2: chạy bot qua main()
+    # Bot chạy bằng polling
     print("🚀 Starting bot in polling mode...")
     main()

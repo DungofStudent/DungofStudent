@@ -1739,7 +1739,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
     """
     try:
         await refresh_markets_stub()
-        utcnow = datetime.now(timezone.utc)
+        utcnow = dt.datetime.now(dt.timezone.utc)
 
         # Hourly market news broadcast (only once per NEWS_HOURLY_COOLDOWN)
         global LAST_NEWS_HOUR, LAST_NEWS_IDS

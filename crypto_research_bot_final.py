@@ -30,7 +30,6 @@ import base64, hmac, hashlib
 
 from dotenv import load_dotenv
 from typing import List, Dict, Any, Optional
-from flask import Flask, request
 import asyncio
 
 from telegram import Bot
@@ -112,8 +111,6 @@ PORT = int(os.getenv("PORT", 8080))
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
 WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
 
-# Flask app
-flask_app = Flask(__name__)
 # Telegram Application
 application = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -151,9 +148,9 @@ last_sent = None
 
 alerts = {}
 # ================== Flask routes =====================
-@flask_app.route("/")
-def home():
-    return "✅ Bot is running with Flask + Polling!"
+#@flask_app.route("/")
+#def home():
+#    return "✅ Bot is running with Flask + Polling!"
 	
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):

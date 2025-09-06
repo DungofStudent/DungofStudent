@@ -128,7 +128,7 @@ MAX_SCAN = 200  # max instruments to scan from OKX
 TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Variables
 PORT = int(os.getenv("PORT", 8080))
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}{WEBHOOK_PATH}"
+WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_URL')}{WEBHOOK_PATH}"
 
 # Flask app
 flask_app = Flask(__name__)

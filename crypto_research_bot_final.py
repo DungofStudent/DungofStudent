@@ -2135,5 +2135,5 @@ def main():
 
 if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
-	threading.Thread(target=start_healthcheck_server, daemon=True).start()
+    threading.Thread(target=start_healthcheck_server, daemon=True).start()
     main()

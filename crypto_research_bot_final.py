@@ -32,6 +32,8 @@ from telegram.request import HTTPXRequest
 import hashlib
 import hmac
 import json
+import socketserver
+import http.server
 
 
 from dotenv import load_dotenv
@@ -714,6 +716,21 @@ def fetch_okx_data(endpoint: str, params: dict = None, method: str = "GET"):
         data = j.get("data", []) if j else []
     return data
 
+#==============health-check server==============
+class HealthHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/":
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"Bot OKX is alive")
+        else:
+            self.send_error(404)
+
+def start_healthcheck_server():
+    port = int(os.environ.get("PORT", 8080))
+    with socketserver.TCPServer(("", port), HealthHandler) as httpd:
+        httpd.serve_forever()
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
     if len(df) < 2:
@@ -2118,4 +2135,5 @@ def main():
 
 if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
+	threading.Thread(target=start_healthcheck_server, daemon=True).start()
     main()

@@ -302,7 +302,7 @@ def check_liquidity_strength(df):
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
 async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-	logger.info(f"📩 Received message: {update.message.text}")
+    logger.info(f"📩 Received message: {update.message.text}")
     waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
 
     # Chia nhỏ text

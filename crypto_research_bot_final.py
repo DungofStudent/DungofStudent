@@ -1651,6 +1651,7 @@ async def send_flow_alerts(context, coin: str, sig: dict):
 
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	logger.info(f"📩 Received /start from user {update.effective_user.id}")
     refresh_markets(MAX_SCAN)
     user_id = update.effective_user.id
     await update.message.reply_text(
@@ -1660,6 +1661,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	logger.info(f"📩 Received callback: {update.callback_query.data}")
     query = update.callback_query
     data = query.data
     chat_id = update.effective_chat.id   # lấy chat id
@@ -1916,6 +1918,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Error in background_price_checker")
 
 async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="long"):
+	logger.info(f"📩 Received /research with args: {context.args}")
     chat_id = update.effective_chat.id
     await safe_send(context.bot,chat_id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
 
@@ -2008,6 +2011,7 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
 
 async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	logger.info(f"📩 Received /deepcoin")
     chat_id = update.effective_chat.id
     if not context.args:
         await safe_send(context.bot, chat_id, "Ví dụ: /deepcoin BTC")
@@ -2040,6 +2044,7 @@ async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await waiting_msg.edit_text(f"❌ Lỗi khi phân tích {coin}")
 
 async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	logger.info(f"📩 Received message: {update.message.text}")
     chat_id = update.effective_chat.id
     text = update.message.text.strip().upper()
     if not text.endswith("-USDT") and not text.endswith("-USD"):

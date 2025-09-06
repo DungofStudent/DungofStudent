@@ -302,6 +302,7 @@ def check_liquidity_strength(df):
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
 async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	logger.info(f"📩 Received message: {update.message.text}")
     waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
 
     # Chia nhỏ text
@@ -1683,9 +1684,18 @@ async def send_flow_alerts(context, coin: str, sig: dict):
         except Exception as e:
             logger.exception("Failed to send flow alert")
 
+async def reset_webhook(app: Application):
+    bot: Bot = app.bot
+    # Xóa webhook cũ
+    await bot.delete_webhook()
+    logger.info("❌ Old webhook deleted")
+    # Đặt webhook mới
+    await bot.set_webhook(url=WEBHOOK_URL)
+    logger.info(f"✅ New webhook set: {WEBHOOK_URL}")
 
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	logger.info(f"📩 Received /start from user {update.effective_user.id}")
     refresh_markets(MAX_SCAN)
     user_id = update.effective_user.id
     await update.message.reply_text(
@@ -1695,6 +1705,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	logger.info(f"📩 Received callback: {update.callback_query.data}")
     query = update.callback_query
     data = query.data
     chat_id = update.effective_chat.id   # lấy chat id
@@ -1951,6 +1962,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Error in background_price_checker")
 
 async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="long"):
+	logger.info(f"📩 Received /research with args: {context.args}")
     chat_id = update.effective_chat.id
     await safe_send(context.bot,chat_id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
 
@@ -2043,6 +2055,7 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
 
 async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	logger.info(f"📩 Received /deepcoin")
     chat_id = update.effective_chat.id
     if not context.args:
         await safe_send(context.bot, chat_id, "Ví dụ: /deepcoin BTC")
@@ -2126,15 +2139,22 @@ async def refresh_markets_stub():
     MARKET_MAP.setdefault("ETH-USDT", {})["current_price"] = MARKET_MAP.get("ETH-USDT", {}).get("current_price", 1800.0)
     MARKET_MAP.setdefault("ETH-USDT", {})["vol_quote_24h"] = MARKET_MAP.get("ETH-USDT", {}).get("vol_quote_24h", 200000000.0)
 
+async def debug_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"🔥 Raw update: {update.to_dict()}")
+
 # ================== MAIN ==================
 def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    # Add handlers
+    app = Application.builder().token(TOKEN).build()
+
+    # Handlers
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("research", research_handler))
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     app.add_handler(CallbackQueryHandler(callback_handler))
+
+    # Reset webhook trước khi run
+    app.post_init(reset_webhook)
 
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
@@ -2142,7 +2162,7 @@ def main():
         listen="0.0.0.0",
         port=PORT,
         url_path=TOKEN,           # chỉ token
-        webhook_url=WEBHOOK_URL,  # full URL có /webhook/<token>
+        webhook_url=WEBHOOK_URL,  # full URL có /webhook/<TOKEN>
     )
 	
 if __name__ == "__main__":

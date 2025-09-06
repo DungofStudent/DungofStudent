@@ -89,7 +89,10 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
     raise RuntimeError("❌ TELEGRAM_TOKEN not found! Please set it in Railway Variables or .env")
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 logger = logging.getLogger("crypto_bot_opt")
 
 request = HTTPXRequest(
@@ -170,9 +173,9 @@ last_sent = None
 
 alerts = {}
 # ================== Flask routes =====================
-@flask_app.route("/")
-def home():
-    return "✅ Bot is running with Flask + Polling!"
+#@flask_app.route("/")
+#def home():
+#    return "✅ Bot is running with Flask + Polling!"
 	
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -2068,38 +2071,17 @@ def main():
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     app.add_handler(CallbackQueryHandler(callback_handler))
-    logger.info("Bot webhook...")
 
-    # Background job every 60s
-    app.job_queue.run_repeating(background_price_checker, interval=60, first=5)
+    logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
-    # Webhook URL cho Render
-    # Lấy URL từ Render
-    render_url = os.environ.get("RENDER_EXTERNAL_URL", "your-app.onrender.com")
-
-# Nếu biến không bắt đầu bằng http thì thêm https://
-    if not render_url.startswith("http"):
-        render_url = "https://" + render_url
-
-# Webhook URL chuẩn
-    webhook_url = f"{render_url}/{TELEGRAM_TOKEN}"
-
-    print(f"🔗 Setting webhook to: {webhook_url}")
-    # Start bot bằng webhook
     app.run_webhook(
         listen="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080)),
+        port=PORT,
         url_path=TELEGRAM_TOKEN,
-        webhook_url=webhook_url
+        webhook_url=WEBHOOK_URL,
     )
 
+
 if __name__ == "__main__":
-    # Flask server để Render giữ app sống (nếu bạn dùng Flask để healthcheck)
-    threading.Thread(
-        target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
-        daemon=True
-    ).start()
-
-    print("🚀 Starting bot in webhook mode...")
+    logger.info("🚀 Starting bot in webhook mode...")
     main()
-

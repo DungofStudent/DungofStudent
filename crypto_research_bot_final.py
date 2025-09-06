@@ -88,12 +88,12 @@ if not TELEGRAM_TOKEN:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("crypto_bot_opt")
 
-app = Application.builder() \
-    .token(TELEGRAM_TOKEN) \
-    .connect_timeout(30) \
-    .read_timeout(30) \
-    .build()
-
+app.run_webhook(
+    listen="0.0.0.0",
+    port=int(os.environ.get("PORT", 8080)),
+    url_path=TELEGRAM_TOKEN,
+    webhook_url=f"https://{os.environ['RENDER_EXTERNAL_URL']}/{TELEGRAM_TOKEN}"
+)
 # ================== GLOBAL STATE ==================
 COINS_LIST = []
 MARKET_MAP = {}   # key: "BTC-USDT", value: dict(info...)
@@ -2111,12 +2111,6 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    # Flask server để Render giữ app sống
-    threading.Thread(
-        target=lambda: flask_app.run(host="0.0.0.0", port=PORT),
-        daemon=True
-    ).start()
-
     # Bot chạy bằng polling
     print("🚀 Starting bot in polling mode...")
     main()

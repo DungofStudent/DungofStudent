@@ -128,8 +128,8 @@ MAX_SCAN = 200  # max instruments to scan from OKX
 TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Variables
 PORT = int(os.getenv("PORT", 8080))
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_URL')}{WEBHOOK_PATH}"
-
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")  # ví dụ: https://bot-okxx.onrender.com
+WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}"
 # Flask app
 flask_app = Flask(__name__)
 # Telegram Application
@@ -2129,7 +2129,6 @@ async def refresh_markets_stub():
 # ================== MAIN ==================
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-
     # Add handlers
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("research", research_handler))
@@ -2142,11 +2141,10 @@ def main():
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=TELEGRAM_TOKEN,
-        webhook_url=WEBHOOK_URL,
+        url_path=TOKEN,           # chỉ token
+        webhook_url=WEBHOOK_URL,  # full URL có /webhook/<token>
     )
-
-
+	
 if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
     threading.Thread(target=start_healthcheck_server, daemon=True).start()

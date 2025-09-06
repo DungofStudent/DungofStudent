@@ -80,12 +80,14 @@ def ai_summarize(prompt: str) -> str:
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+PORT = int(os.environ.get("PORT", 8080))
 if not TELEGRAM_TOKEN:
     raise RuntimeError("❌ TELEGRAM_TOKEN not found! Please set it in Railway Variables or .env")
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 logger = logging.getLogger("crypto_bot_opt")
 
 app.run_webhook(
@@ -2102,15 +2104,17 @@ def main():
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     app.add_handler(CallbackQueryHandler(callback_handler))
-    logger.info("Bot polling...")
 
-    # Background job every 60s
-    app.job_queue.run_repeating(background_price_checker, interval=60, first=5)
+    logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
-    # Start bot polling
-    app.run_polling()
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=TELEGRAM_TOKEN,
+        webhook_url=WEBHOOK_URL,
+    )
+
 
 if __name__ == "__main__":
-    # Bot chạy bằng polling
-    print("🚀 Starting bot in polling mode...")
+    logger.info("🚀 Starting bot in webhook mode...")
     main()

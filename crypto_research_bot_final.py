@@ -728,9 +728,23 @@ class HealthHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404)
 
 def start_healthcheck_server():
-    port = int(os.environ.get("PORT", 8080))
+    import http.server, socketserver
+
+    port = 8080  # cổng phụ cho healthcheck
+    class HealthHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/":
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"Bot OKX is alive")
+            else:
+                self.send_error(404)
+
     with socketserver.TCPServer(("", port), HealthHandler) as httpd:
+        logger.info(f"✅ Healthcheck server listening on {port}")
         httpd.serve_forever()
+
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
     if len(df) < 2:
@@ -2137,3 +2151,4 @@ if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
     threading.Thread(target=start_healthcheck_server, daemon=True).start()
     main()
+

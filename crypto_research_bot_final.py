@@ -172,14 +172,18 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.okx.com"
 DEFAULT_HEADERS = {
-"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-"Accept": "application/json, text/plain, */*",
-"Accept-Language": "en-US,en;q=0.9",
-"Referer": "https://www.okx.com/",
-"Origin": "https://www.okx.com",
-"Cache-Control": "no-cache",
-"Pragma": "no-cache",
-"Connection": "keep-alive",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/119.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.okx.com/",
+    "Origin": "https://www.okx.com",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Connection": "keep-alive",
 }
 RATE_LIMIT_DELAY = 0.2 # giãn cách giữa các request (200ms)
 MAX_RETRY = 5
@@ -515,7 +519,9 @@ def _normalize_okx_candles_to_df(data: List[List[Any]]) -> pd.DataFrame:
     df = df.sort_values("ts").reset_index(drop=True)
     return df[["ts", "open", "high", "low", "close", "vol"]]
 
-def fetch_okx(url, params=None, retries=3, timeout=10):
+def fetch_okx(endpoint: str, params=None, retries: int = 3, timeout: int = 10):
+    url = f"{OKX_BASE.rstrip('/')}{endpoint}"
+
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -523,55 +529,54 @@ def fetch_okx(url, params=None, retries=3, timeout=10):
             "Chrome/119.0.0.0 Safari/537.36"
         ),
         "Accept": "application/json",
-        "Referer": "https://www.okx.com/"
+        "Referer": "https://www.okx.com/",
+        "Origin": "https://www.okx.com",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Connection": "keep-alive",
     }
 
     for attempt in range(retries):
         try:
-            r = requests.get(url, params=params, headers=headers, timeout=timeout, proxies={"http": PROXY, "https": PROXY} if PROXY else None)
+            r = requests.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+                proxies={"http": PROXY, "https": PROXY} if PROXY else None
+            )
+            if r.status_code == 403:
+                logger.warning(f"403 Forbidden {url} {params} (retry {attempt+1}/{retries})")
+                time.sleep(1.5 * (attempt + 1))
+                continue
             r.raise_for_status()
             return r.json()
-        except requests.exceptions.HTTPError as e:
-            if r.status_code == 403:
-                logger.warning(f"403 Forbidden, retrying ({attempt+1}/{retries}) {url} {params}")
-                time.sleep(1.5)
-            else:
-                logger.error(f"OKX HTTPError: {url} {params} {e}")
-                break
         except Exception as e:
-            logger.error(f"OKX request error: {url} {params} {e}")
+            logger.error(f"OKX request error {url} {params}: {e}")
             time.sleep(1.0)
     return None
 
 # Lấy danh sách tickers SWAP
+# --- Tickers ---
 def fetch_tickers_okx():
-    url = f"{OKX_BASE.rstrip('/')}/market/tickers"
-    params = {"instType": "SWAP"}
-    j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    j = fetch_okx("/market/tickers", {"instType": "SWAP"})
     if not j or not j.get("data"):
         logger.warning("Public tickers API rỗng → fallback signed")
-        # fallback to signed (pass endpoint path)
-        j = okx_get_json_signed("/market/tickers" if "/api/v5" in OKX_BASE else "/api/v5/market/tickers", params={"instType": "SWAP"}, method="GET")
+        j = okx_get_json_signed("/market/tickers", {"instType": "SWAP"}, method="GET")
     return j.get("data", []) if j else []
 
-# Lấy danh sách instruments SWAP
 def fetch_instruments_okx():
-    url = f"{OKX_BASE.rstrip('/')}/public/instruments"
-    params = {"instType": "SWAP"}
-    j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    j = fetch_okx("/public/instruments", {"instType": "SWAP"})
     if not j or not j.get("data"):
         logger.warning("Public instruments API rỗng → fallback signed")
-        j = okx_get_json_signed("/public/instruments" if "/api/v5" in OKX_BASE else "/api/v5/public/instruments", params={"instType": "SWAP"}, method="GET")
+        j = okx_get_json_signed("/public/instruments", {"instType": "SWAP"}, method="GET")
     return j.get("data", []) if j else []
 
 # Lấy nến (candlestick) cho 1 coin
 def fetch_candles_okx(inst_id: str, bar: str = "1H", limit: int = 200):
-    url = f"{OKX_BASE}/market/candles"
-    params = {"instId": inst_id, "bar": bar, "limit": limit}
-    data = fetch_okx(url, params)
-    # Delay nhẹ để tránh spam
-    time.sleep(0.2)
-    return data.get("data", []) if data else []
+    j = fetch_okx("/market/candles", {"instId": inst_id, "bar": bar, "limit": limit})
+    time.sleep(0.2)  # tránh spam
+    return j.get("data", []) if j else []
 
 # Ví dụ sử dụng API key (tùy chọn)
 def fetch_okx_with_key(url, params=None, api_key="", api_pass="", api_secret=""):
@@ -723,6 +728,26 @@ def fetch_okx_data(endpoint: str, params: dict = None, method: str = "GET"):
         j = okx_get_json_signed(endpoint, params, method)
         data = j.get("data", []) if j else []
     return data
+
+def okx_fetch(endpoint: str, params=None, method: str="GET", retries: int=3):
+    """Unified fetch for OKX public endpoints"""
+    url = f"{OKX_BASE}{endpoint}"
+    for attempt in range(retries):
+        try:
+            if method.upper() == "GET":
+                r = requests.get(url, params=params, headers=DEFAULT_HEADERS, timeout=15)
+            else:
+                r = requests.post(url, json=params, headers=DEFAULT_HEADERS, timeout=15)
+            if r.status_code == 403:
+                logger.warning(f"403 Forbidden {url}, retry {attempt+1}/{retries}")
+                time.sleep(1.5)
+                continue
+            r.raise_for_status()
+            return r.json()
+        except Exception as e:
+            logger.error(f"okx_fetch error {url} {e}")
+            time.sleep(1)
+    return {}
 
 #==============health-check server==============
 class HealthHandler(http.server.SimpleHTTPRequestHandler):

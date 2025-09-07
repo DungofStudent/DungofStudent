@@ -189,9 +189,13 @@ def home():
 
 @flask_app.route(WEBHOOK_PATH, methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    application.update_queue.put_nowait(update)
-    return "ok"
+    try:
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        application.update_queue.put_nowait(update)
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return "error", 500
+    return "ok", 200
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -2161,17 +2165,12 @@ def main():
 
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,               # ⚡ Render yêu cầu đúng PORT từ env
-        url_path=TOKEN,
-        webhook_url=WEBHOOK_URL,
-    )
-
 if __name__ == "__main__":
+    # Set webhook khi khởi động
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         url_path=WEBHOOK_PATH,
         webhook_url=WEBHOOK_URL,
+        drop_pending_updates=True
     )

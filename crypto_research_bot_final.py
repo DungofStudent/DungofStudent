@@ -186,7 +186,13 @@ alerts = {}
 @flask_app.route("/")
 def home():
     return "✅ Bot is running with Flask + Polling!"
-	
+
+@flask_app.route(WEBHOOK_PATH, methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put_nowait(update)
+    return "ok"
+
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
     """
@@ -2162,8 +2168,10 @@ def main():
         webhook_url=WEBHOOK_URL,
     )
 
-
 if __name__ == "__main__":
-    logger.info("🚀 Starting bot in webhook mode...")
-    main()
-
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=WEBHOOK_PATH,
+        webhook_url=WEBHOOK_URL,
+    )

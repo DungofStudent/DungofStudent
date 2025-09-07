@@ -2158,7 +2158,7 @@ def main():
     app.post_init = reset_webhook   # ✅ GÁN, không gọi
 
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
-
+    url_path = f"webhook/{TOKEN}"
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,

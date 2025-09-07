@@ -2166,11 +2166,14 @@ def main():
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
 if __name__ == "__main__":
-    # Set webhook khi khởi động
+    # Healthcheck chạy thread riêng để không chiếm port chính
+    threading.Thread(target=start_healthcheck_server, daemon=True).start()
+
+    logger.info("🚀 Starting bot in webhook mode...")
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
         url_path=WEBHOOK_PATH,
         webhook_url=WEBHOOK_URL,
-        drop_pending_updates=True
+        drop_pending_updates=True,
     )

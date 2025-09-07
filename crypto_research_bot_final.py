@@ -2098,25 +2098,29 @@ async def refresh_markets_stub():
 
 # ================== MAIN ==================
 def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app = Application.builder().token(TOKEN).build()
 
-    # Add handlers
+    # Handlers
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("research", research_handler))
     app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     app.add_handler(CallbackQueryHandler(callback_handler))
 
+    # Reset webhook trước khi run
+    app.post_init = reset_webhook   # ✅ gán, không gọi
+
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=TELEGRAM_TOKEN,
+        url_path=TOKEN,
         webhook_url=WEBHOOK_URL,
     )
 
 
 if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
+    threading.Thread(target=start_healthcheck_server, daemon=True).start()
     main()

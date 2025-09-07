@@ -127,9 +127,15 @@ MAX_SCAN = 200  # max instruments to scan from OKX
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Variables
 PORT = int(os.getenv("PORT", 8080))
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "")
+if not RENDER_URL.startswith("http"):
+    logger.warning(f"⚠️ RENDER_EXTERNAL_URL='{RENDER_URL}' không hợp lệ, tự động thêm https://")
+    RENDER_URL = f"https://{RENDER_URL}"
+
 WEBHOOK_PATH = f"/webhook/{TOKEN}"
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")  # https://bot-okx-f2h1.onrender.com
-WEBHOOK_URL = f"{RENDER_URL}/webhook/{TOKEN}"
+WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}"
+
+logger.info(f"🌍 Webhook URL final: {WEBHOOK_URL}")
 
 # Flask app
 flask_app = Flask(__name__)
@@ -2155,14 +2161,15 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
 
     # Reset webhook trước khi run
-    app.post_init = reset_webhook   # ✅ GÁN, không gọi
+    app.post_init = reset_webhook
 
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
-    url_path = f"webhook/{TOKEN}"
+
+    # ⚠️ Sửa lại url_path cho khớp với /webhook/<TOKEN>
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=TOKEN,
+        url_path=f"webhook/{TOKEN}",
         webhook_url=WEBHOOK_URL,
     )
 
@@ -2171,5 +2178,3 @@ if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
     threading.Thread(target=start_healthcheck_server, daemon=True).start()
     main()
-
-

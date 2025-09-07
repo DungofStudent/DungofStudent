@@ -2154,19 +2154,21 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
 
     # Reset webhook trước khi run
-    app.post_init(reset_webhook)
+    app.post_init = reset_webhook   # ✅ GÁN, không gọi
 
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=TOKEN,           # chỉ token
-        webhook_url=WEBHOOK_URL,  # full URL có /webhook/<TOKEN>
+        url_path=TOKEN,
+        webhook_url=WEBHOOK_URL,
     )
-	
+
+
 if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
     threading.Thread(target=start_healthcheck_server, daemon=True).start()
     main()
+
 

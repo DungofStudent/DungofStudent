@@ -1696,7 +1696,7 @@ async def reset_webhook(app: Application):
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Received /start from user {update.effective_user.id}")
-    refresh_markets(MAX_SCAN)
+    refresh_markets(MAX_SCAN)   # luôn thụt 4 space trong hàm
     user_id = update.effective_user.id
     await update.message.reply_text(
         "👋 Crypto Research Bot (OKX • Liquidity & Trend)",

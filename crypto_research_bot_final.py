@@ -2144,23 +2144,20 @@ async def debug_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================== MAIN ==================
 def main():
-    app = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(TOKEN).build()
 
     # Handlers
-    app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("research", research_handler))
-    app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
-    app.add_handler(CallbackQueryHandler(callback_handler))
-
-    # Reset webhook trước khi run
-    app.post_init = reset_webhook   # ✅ GÁN, không gọi
+    application.add_handler(CommandHandler("start", start_handler))
+    application.add_handler(CommandHandler("research", research_handler))
+    application.add_handler(CommandHandler("deepcoin", deepcoin_handler))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
+    application.add_handler(CallbackQueryHandler(callback_handler))
 
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
-    app.run_webhook(
+    application.run_webhook(
         listen="0.0.0.0",
-        port=PORT,
+        port=PORT,               # ⚡ Render yêu cầu đúng PORT từ env
         url_path=TOKEN,
         webhook_url=WEBHOOK_URL,
     )
@@ -2168,14 +2165,5 @@ def main():
 
 if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
-    threading.Thread(
-        target=lambda: application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=TOKEN,
-            webhook_url=WEBHOOK_URL,
-        ),
-        daemon=True,
-    ).start()
+    main()
 
-    flask_app.run(host="0.0.0.0", port=PORT+1)

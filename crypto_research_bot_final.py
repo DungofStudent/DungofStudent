@@ -738,10 +738,9 @@ class HealthHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
 
-def start_healthcheck_server():
+def start_healthcheck_server(port=8081):
     import http.server, socketserver
 
-    port = 8080  # cổng phụ cho healthcheck
     class HealthHandler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
             if self.path == "/":
@@ -2166,13 +2165,13 @@ def main():
     logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
 
 if __name__ == "__main__":
-    # Healthcheck chạy thread riêng để không chiếm port chính
-    threading.Thread(target=start_healthcheck_server, daemon=True).start()
+    # Healthcheck chạy port phụ (ví dụ 8081)
+    threading.Thread(target=lambda: start_healthcheck_server(port=8081), daemon=True).start()
 
     logger.info("🚀 Starting bot in webhook mode...")
     application.run_webhook(
         listen="0.0.0.0",
-        port=PORT,
+        port=PORT,   # <- Render PORT (10000)
         url_path=WEBHOOK_PATH,
         webhook_url=WEBHOOK_URL,
         drop_pending_updates=True,

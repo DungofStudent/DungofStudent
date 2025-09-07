@@ -183,9 +183,9 @@ last_sent = None
 
 alerts = {}
 # ================== Flask routes =====================
-#@flask_app.route("/")
-#def home():
-#    return "✅ Bot is running with Flask + Polling!"
+@flask_app.route("/")
+def home():
+    return "✅ Bot is running with Flask + Polling!"
 	
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):
@@ -2168,5 +2168,14 @@ def main():
 
 if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
-    threading.Thread(target=start_healthcheck_server, daemon=True).start()
-    main()
+    threading.Thread(
+        target=lambda: application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=TOKEN,
+            webhook_url=WEBHOOK_URL,
+        ),
+        daemon=True,
+    ).start()
+
+    flask_app.run(host="0.0.0.0", port=PORT+1)

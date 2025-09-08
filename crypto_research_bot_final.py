@@ -127,16 +127,19 @@ MAX_SCAN = 200  # max instruments to scan from OKX
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Variables
 PORT = int(os.getenv("PORT", 8080))
+
+# Render URL (chính + fallback)
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "").strip()
 if not RENDER_URL:
-    # fallback tự động lấy từ Render host
-    RENDER_URL = f"https://{os.getenv('RENDER_SERVICE_NAME')}.onrender.com"
+    service_name = os.getenv("RENDER_SERVICE_NAME", "").strip()
+    if service_name:
+        RENDER_URL = f"https://{service_name}.onrender.com"
 
-WEBHOOK_PATH = f"/webhook/{TOKEN}"   # thay vì chỉ "/{TOKEN}"
-WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}{WEBHOOK_PATH}"
+# Webhook
+WEBHOOK_PATH = f"/webhook/{TOKEN}"   # endpoint cố định
+WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}" if RENDER_URL else ""
+
 logger.info(f"✅ Using webhook URL: {WEBHOOK_URL}")
-
-# Flask app
 flask_app = Flask(__name__)
 # Telegram Application
 application = Application.builder().token(TOKEN).build()

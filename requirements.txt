@@ -3,7 +3,7 @@ groq
 numpy==1.26.4
 pandas==2.2.2
 matplotlib==3.9.2
-https://github.com/twopirllc/pandas-ta/archive/refs/heads/main.zip
+pandas-ta==0.4.67b0
 python-dotenv==1.0.1
 requests==2.32.3
 apscheduler==3.10.4

@@ -135,14 +135,15 @@ if not RENDER_URL:
     if service_name:
         RENDER_URL = f"https://{service_name}.onrender.com"
 
-# Webhook
-WEBHOOK_PATH = f"webhook/{TOKEN}"   # không có "/" ở đầu
-WEBHOOK_URL = f"{RENDER_URL}/{WEBHOOK_PATH}"
+PTB_WEBHOOK_PATH = f"webhook/{TOKEN}"
+PTB_WEBHOOK_URL  = f"{RENDER_URL}/{PTB_WEBHOOK_PATH}"
 
-# Flask webhook config
-FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"   # có slash đầu
+# Flask cần route CÓ dấu "/"
+FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"
 
-logger.info(f"✅ Using webhook URL: {WEBHOOK_URL}")
+logger.info(f"✅ Using PTB webhook URL: {PTB_WEBHOOK_URL}")
+logger.info(f"✅ Flask will listen on: {FLASK_WEBHOOK_PATH}")
+
 flask_app = Flask(__name__)
 # Telegram Application
 application = Application.builder().token(TOKEN).build()
@@ -2182,10 +2183,10 @@ if __name__ == "__main__":
 
     logger.info("🚀 Starting bot in webhook mode...")
   # PTB run_webhook
-application.run_webhook(
-    listen="0.0.0.0",
-    port=PORT,
-    url_path=PTB_WEBHOOK_PATH,
-    webhook_url=PTB_WEBHOOK_URL,
-    drop_pending_updates=True,
-)
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=PTB_WEBHOOK_PATH,
+        webhook_url=PTB_WEBHOOK_URL,
+        drop_pending_updates=True,
+    )

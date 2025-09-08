@@ -136,8 +136,8 @@ if not RENDER_URL:
         RENDER_URL = f"https://{service_name}.onrender.com"
 
 # Webhook
-WEBHOOK_PATH = f"/webhook/{TOKEN}"   # endpoint cố định
-WEBHOOK_URL = f"{RENDER_URL}{WEBHOOK_PATH}" if RENDER_URL else ""
+WEBHOOK_PATH = f"webhook/{TOKEN}"   # không có "/" ở đầu
+WEBHOOK_URL = f"{RENDER_URL}/{WEBHOOK_PATH}"
 
 logger.info(f"✅ Using webhook URL: {WEBHOOK_URL}")
 flask_app = Flask(__name__)
@@ -2180,8 +2180,8 @@ if __name__ == "__main__":
     logger.info("🚀 Starting bot in webhook mode...")
     application.run_webhook(
         listen="0.0.0.0",
-        port=PORT,   # <- Render PORT (10000)
-        url_path=WEBHOOK_PATH,
+        port=PORT,
+        url_path=WEBHOOK_PATH,        # giờ = webhook/<TOKEN>
         webhook_url=WEBHOOK_URL,
         drop_pending_updates=True,
     )

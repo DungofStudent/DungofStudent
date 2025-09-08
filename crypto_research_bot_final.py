@@ -200,7 +200,7 @@ alerts = {}
 def home():
     return "✅ Bot is running with Flask + Polling!"
 
-@flask_app.route(WEBHOOK_PATH, methods=["POST"])
+@flask_app.route(FLASK_WEBHOOK_PATH, methods=["POST"])
 def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)

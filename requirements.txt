@@ -1,6 +1,6 @@
 setuptools
 groq
-numpy==1.26.4
+numpy>=2.2.6
 pandas==2.2.2
 matplotlib==3.9.2
 pandas-ta==0.4.67b0

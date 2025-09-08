@@ -2169,8 +2169,8 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     # Handlers
-    application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("research", research_command))
     application.add_handler(CommandHandler("research", research_handler))
     application.add_handler(CommandHandler("deepcoin", deepcoin_handler))

@@ -2170,6 +2170,9 @@ def main():
 
     # Handlers
     application.add_handler(CommandHandler("start", start_handler))
+	
+    application.add_handler(CommandHandler("start", start_command))
+	application.add_handler(CommandHandler("research", research_command))
     application.add_handler(CommandHandler("research", research_handler))
     application.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))

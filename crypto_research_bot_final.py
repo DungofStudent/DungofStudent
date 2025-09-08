@@ -139,6 +139,9 @@ if not RENDER_URL:
 WEBHOOK_PATH = f"webhook/{TOKEN}"   # không có "/" ở đầu
 WEBHOOK_URL = f"{RENDER_URL}/{WEBHOOK_PATH}"
 
+# Flask webhook config
+FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"   # có slash đầu
+
 logger.info(f"✅ Using webhook URL: {WEBHOOK_URL}")
 flask_app = Flask(__name__)
 # Telegram Application
@@ -2178,10 +2181,11 @@ if __name__ == "__main__":
     threading.Thread(target=lambda: start_healthcheck_server(port=8081), daemon=True).start()
 
     logger.info("🚀 Starting bot in webhook mode...")
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=WEBHOOK_PATH,        # giờ = webhook/<TOKEN>
-        webhook_url=WEBHOOK_URL,
-        drop_pending_updates=True,
-    )
+  # PTB run_webhook
+application.run_webhook(
+    listen="0.0.0.0",
+    port=PORT,
+    url_path=PTB_WEBHOOK_PATH,
+    webhook_url=PTB_WEBHOOK_URL,
+    drop_pending_updates=True,
+)

@@ -2170,19 +2170,26 @@ async def debug_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================== MAIN ==================
 def main():
-    # Đăng ký các handlers
+    application = Application.builder().token(TOKEN).build()
+
+    # Handlers
     application.add_handler(CommandHandler("start", start_handler))
-    application.add_handler(CommandHandler("research", research_command))
+    application.add_handler(CommandHandler("research", research_handler))
+    application.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     application.add_handler(CallbackQueryHandler(callback_handler))
 
-    # Chạy healthcheck server song song
-    threading.Thread(target=start_healthcheck_server, args=(8081,), daemon=True).start()
+    # Healthcheck chạy port phụ
+    threading.Thread(target=lambda: start_healthcheck_server(port=8081), daemon=True).start()
 
-    logger.info("🚀 Starting bot in webhook mode (Flask)")
-    # Flask sẽ nhận request từ Telegram và đẩy vào application.update_queue
-    flask_app.run(host="0.0.0.0", port=PORT)
-    
+    logger.info("🚀 Starting bot in webhook mode.")
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=PTB_WEBHOOK_PATH,
+        webhook_url=PTB_WEBHOOK_URL,
+        drop_pending_updates=True,
+    )
 
 if __name__ == "__main__":
     main()

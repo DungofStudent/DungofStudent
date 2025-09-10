@@ -116,6 +116,9 @@ app = Application.builder() \
 OKX_API_KEY = os.getenv("OKX_API_KEY")
 OKX_API_SECRET = os.getenv("OKX_API_SECRET")
 OKX_API_PASSPHRASE = os.getenv("OKX_API_PASSPHRASE")
+
+PROXY = os.getenv("PROXY")
+proxies = {"http": PROXY, "https": PROXY} if PROXY else None
 # ================== GLOBAL STATE ==================
 COINS_LIST = []
 MARKET_MAP = {}   # key: "BTC-USDT", value: dict(info...)
@@ -570,7 +573,7 @@ def fetch_instruments_okx():
     params = {"instType": "SWAP"}
     for base in OKX_DOMAINS:
         url = f"{base}/api/v5/public/instruments"
-        j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+        j = okx_get_json_with_proxy(url, params=params, headers=DEFAULT_HEADERS)
         if j and j.get("data"):
             return j["data"]
     logger.warning("⚠️ Public instruments API rỗng hoặc lỗi → trả []")
@@ -582,7 +585,7 @@ def fetch_tickers_okx():
     params = {"instType": "SWAP"}
     for base in OKX_DOMAINS:
         url = f"{base}/api/v5/market/tickers"
-        j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+        j = okx_get_json_with_proxy(url, params=params, headers=DEFAULT_HEADERS)
         if j and j.get("data"):
             return j["data"]
     logger.warning("⚠️ Public tickers API rỗng hoặc lỗi → trả []")
@@ -748,6 +751,20 @@ def fetch_okx_data(endpoint: str, params: dict = None, method: str = "GET"):
         data = j.get("data", []) if j else []
     return data
 
+def okx_get_json_with_proxy(url, params=None, headers=None, timeout=10):
+    """Try request with optional proxy fallback."""
+    try:
+        # thử request bình thường trước
+        r = requests.get(url, params=params, headers=headers, timeout=timeout)
+        if r.status_code == 403 and proxies:
+            # nếu 403 → thử lại với proxy
+            logger.warning(f"⚠️ {url} trả 403 → thử lại với proxy")
+            r = requests.get(url, params=params, headers=headers, timeout=timeout, proxies=proxies)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        logger.error(f"OKX request error: {url} {params} {e}")
+        return None
 #==============health-check server==============
 class HealthHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):

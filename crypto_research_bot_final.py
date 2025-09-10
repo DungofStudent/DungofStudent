@@ -132,6 +132,7 @@ MAX_SCAN = 200  # max instruments to scan from OKX
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Variables
 PORT = int(os.getenv("PORT", 8080))
+flask_app.run(host="0.0.0.0", port=PORT)
 
 # Render URL (chính + fallback)
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "").strip()

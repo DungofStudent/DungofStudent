@@ -1,18 +1,16 @@
-# Base image Python
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-# Làm việc trong thư mục /app
+# Cài dependencies cơ bản
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy code
 WORKDIR /app
-
-# Copy requirements trước (tối ưu cache)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy toàn bộ source code
 COPY . .
 
-# Expose cổng Flask (nếu cần health check)
-EXPOSE 8080
+# Cài requirements
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Chạy bot
+# Run bot
 CMD ["python", "crypto_research_bot_final.py"]

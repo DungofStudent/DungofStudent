@@ -2244,8 +2244,11 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     application.add_handler(CallbackQueryHandler(callback_handler))
 
-    # Healthcheck chạy port phụ
-    threading.Thread(target=lambda: start_healthcheck_server(port=8081), daemon=True).start()
+    # (Tạm thời bỏ cái healthcheck 8081 để Railway không kill container)
+    # threading.Thread(target=lambda: start_healthcheck_server(port=8081), daemon=True).start()
+
+    # Lấy port Railway cấp
+    port = int(os.getenv("PORT", 8080))
 
     logger.info("🚀 Starting bot in webhook mode.")
     application.run_webhook(
@@ -2255,7 +2258,6 @@ def main():
         webhook_url=PTB_WEBHOOK_URL,
         drop_pending_updates=True,
     )
-
 if __name__ == "__main__":
     main()
 

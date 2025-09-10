@@ -955,6 +955,18 @@ LAST_NEWS_CACHE = []
 LAST_NEWS_FETCH = None
 NEWS_CACHE_TTL = dt.timedelta(minutes=35) 
 
+def fetch_news_cryptocompare(limit=5):
+    """Fallback CryptoCompare News API"""
+    try:
+        url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
+        r = requests.get(url, headers=default_headers, timeout=10)
+        r.raise_for_status()
+        data = r.json().get("Data", [])
+        return [f"{n['title']} ({n['url']})" for n in data[:limit]]
+    except Exception as e:
+        logger.warning(f"⚠️ CryptoCompare error: {e}")
+        return []
+
 def get_news_general(limit: int = 5):
     global LAST_NEWS_CACHE, LAST_NEWS_FETCH
     now = dt.datetime.now()
@@ -1007,10 +1019,11 @@ def get_news_general(limit: int = 5):
             LAST_NEWS_FETCH = now
             return out[:limit]
     except Exception as e:
-        logger.exception("CoinStats fallback error")
-
-    # nếu không lấy được gì
-    return ["Không lấy được tin tức thị trường."]
+        logger.warning("CryptoPanic lỗi/quota full → fallback CryptoCompare")
+        news = fetch_news_cryptocompare(limit)
+        if news:
+            return news
+        return fetch_news_coinstats(limit)
 
 
 def get_news_coin(coin: str, limit: int = 5):
@@ -1077,9 +1090,12 @@ def get_news_today(limit: int = 10):
                 break
         return out if out else ["Không có tin tức hôm nay."]
     except Exception as e:
-        logger.exception("CoinStats get_news_today error")
-        return ["Không lấy được tin tức hôm nay."]
-
+        logger.warning("CryptoPanic today news error → fallback CryptoCompare")
+        news = fetch_news_cryptocompare(limit)
+        if news:
+            return news
+        return fetch_news_coinstats(limit)
+		
 # ================== TECHNICALS ==================
 def _indicators(df: pd.DataFrame):
     if df.empty or len(df) < 50:

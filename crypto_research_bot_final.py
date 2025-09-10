@@ -625,7 +625,7 @@ def okx_sign_request(method: str, path: str, body: str = ""):
         return {}
 
     # timestamp dạng 2025-09-05T03:30:00.000Z
-    timestamp = dt.datetime.utcnow().isoformat("T", "milliseconds") + "Z"
+    timestamp = dt.datetime.now(dt.UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
     # message cần ký
     prehash = f"{timestamp}{method.upper()}{path}{body}"

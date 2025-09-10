@@ -565,33 +565,28 @@ def fetch_okx(url, params=None, retries=3, timeout=10):
             time.sleep(1.0)
     return None
 
-# Lấy danh sách tickers SWAP
-def fetch_tickers_okx():
-    url = f"{OKX_BASE.rstrip('/')}/market/tickers"
-    params = {"instType": "SWAP"}
-    j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
-    if not j or not j.get("data"):
-        logger.warning("⚠️ Public tickers API rỗng hoặc lỗi → fallback signed")
-        j = okx_get_json_signed(
-            "/api/v5/market/tickers",
-            params={"instType": "SWAP"},
-            method="GET"
-        )
-    return j.get("data", []) if j else []
-
-
 def fetch_instruments_okx():
+    """Fetch instruments from OKX (USDT-SWAP only)."""
     url = f"{OKX_BASE.rstrip('/')}/public/instruments"
     params = {"instType": "SWAP"}
     j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
     if not j or not j.get("data"):
         logger.warning("⚠️ Public instruments API rỗng hoặc lỗi → fallback signed")
-        j = okx_get_json_signed(
-            "/api/v5/public/instruments",
-            params={"instType": "SWAP"},
-            method="GET"
-        )
+        # fallback: chỉ cần path bắt đầu từ /api/v5
+        j = okx_get_json_signed("/api/v5/public/instruments", params=params, method="GET")
     return j.get("data", []) if j else []
+
+
+def fetch_tickers_okx():
+    """Fetch tickers from OKX (USDT-SWAP only)."""
+    url = f"{OKX_BASE.rstrip('/')}/market/tickers"
+    params = {"instType": "SWAP"}
+    j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    if not j or not j.get("data"):
+        logger.warning("⚠️ Public tickers API rỗng hoặc lỗi → fallback signed")
+        j = okx_get_json_signed("/api/v5/market/tickers", params=params, method="GET")
+    return j.get("data", []) if j else []
+
 
 
 # Lấy nến (candlestick) cho 1 coin

@@ -342,7 +342,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Chia nhỏ text
     for chunk in split_message(final_text):
-        await waiting_msg.edit_text(chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
+        await safe_edit(waiting_msg, chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
 
 async def error_handler(update, context):
     logger.error("Update %s gây lỗi %s", update, context.error)
@@ -573,7 +573,7 @@ def fetch_instruments_okx():
     if not j or not j.get("data"):
         logger.warning("⚠️ Public instruments API rỗng hoặc lỗi → fallback signed")
         # fallback: chỉ cần path bắt đầu từ /api/v5
-        j = okx_get_json_signed("/api/v5/public/instruments", params=params, method="GET")
+        j = okx_get_json_signed("/public/instruments", params=params, method="GET")
     return j.get("data", []) if j else []
 
 

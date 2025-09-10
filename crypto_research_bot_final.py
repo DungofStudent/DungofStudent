@@ -45,6 +45,7 @@ from urllib.parse import urlencode, urljoin
 
 from telegram import Bot
 from telegram.ext import Application
+from flask import request as flask_request
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -202,17 +203,16 @@ def home():
 
 @flask_app.route(FLASK_WEBHOOK_PATH, methods=["GET", "POST", "HEAD"])
 def webhook():
-    if request.method in ("GET", "HEAD"):
+    if flask_request.method in ("GET", "HEAD"):
         return "ok", 200
 
     try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
+        update = Update.de_json(flask_request.get_json(force=True), application.bot)
         application.update_queue.put_nowait(update)
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return "error", 500
     return "ok", 200
-
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):

@@ -143,7 +143,7 @@ PTB_WEBHOOK_URL  = f"{RENDER_URL}/{PTB_WEBHOOK_PATH}"
 # Flask cần route CÓ dấu "/"
 FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"
 
-OKX_DOMAINS = ["https://www.okx.com", "https://aws.okx.com"]
+OKX_DOMAINS = ["https://www.okx.com"]
 
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (CryptoResearchBot)",
@@ -568,45 +568,25 @@ def fetch_okx(url, params=None, retries=3, timeout=10):
 def fetch_instruments_okx():
     """Fetch instruments from OKX (USDT-SWAP only)."""
     params = {"instType": "SWAP"}
-    data = None
-
     for base in OKX_DOMAINS:
         url = f"{base}/api/v5/public/instruments"
         j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
         if j and j.get("data"):
-            data = j.get("data", [])
-            break
-
-    if not data:
-        logger.warning("⚠️ Public instruments API rỗng hoặc lỗi → fallback signed")
-        # chú ý: endpoint chỉ truyền sau /api/v5
-        j = okx_get_json_signed("/public/instruments", params=params, method="GET")
-        data = j.get("data", []) if j else []
-
-    return data or []
+            return j["data"]
+    logger.warning("⚠️ Public instruments API rỗng hoặc lỗi → trả []")
+    return []
 
 
 def fetch_tickers_okx():
     """Fetch tickers from OKX (USDT-SWAP only)."""
     params = {"instType": "SWAP"}
-    data = None
-
     for base in OKX_DOMAINS:
         url = f"{base}/api/v5/market/tickers"
         j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
         if j and j.get("data"):
-            data = j.get("data", [])
-            break
-
-    if not data:
-        logger.warning("⚠️ Public tickers API rỗng hoặc lỗi → fallback signed")
-        # chỉ endpoint sau /api/v5
-        j = okx_get_json_signed("/market/tickers", params=params, method="GET")
-        data = j.get("data", []) if j else []
-
-    return data or []
-
-
+            return j["data"]
+    logger.warning("⚠️ Public tickers API rỗng hoặc lỗi → trả []")
+    return []
 
 # Lấy nến (candlestick) cho 1 coin
 def fetch_candles_okx(inst_id: str, bar: str = "1H", limit: int = 200):

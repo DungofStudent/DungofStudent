@@ -350,33 +350,20 @@ app.add_error_handler(error_handler)
 
 # ================== OKX HELPERS ==================
 def refresh_markets(limit: int = 60):
-    """
-    Refresh markets: fetch instruments + tickers (instType=SWAP),
-    filter USDT-SWAP,
-    pick top by quote volume and populate global MARKET_MAP and COINS_LIST.
-    """
     try:
-        # luôn truyền instType=SWAP để tránh lỗi 50014
-        inst_data = fetch_instruments_okx(instType="SWAP")
-        tickers = fetch_tickers_okx(instType="SWAP")
-
-        if not inst_data:
-            logger.warning("⚠️ Instruments API trả về rỗng")
-        if not tickers:
-            logger.warning("⚠️ Tickers API trả về rỗng")
-
-        tick_map = {t.get("instId"): t for t in tickers} if tickers else {}
+        inst_data = fetch_instruments_okx()
+        tickers = fetch_tickers_okx()
+        tick_map = {t.get("instId"): t for t in tickers}
 
         out = {}
-        for item in inst_data or []:
+        for item in inst_data:
             inst_id = item.get("instId", "")
-            # chỉ lấy USDT-SWAP
             if not inst_id.endswith("USDT-SWAP"):
                 continue
-            base = item.get("uly")  # e.g. "BTC-USDT"
+            base = item.get("uly")
             if not base or not base.endswith("USDT"):
                 continue
-            coin_id = base  # "BTC-USDT"
+            coin_id = base
 
             t = tick_map.get(inst_id, {})
             try:
@@ -402,8 +389,7 @@ def refresh_markets(limit: int = 60):
                 "vol_base_24h": vol_base,
             }
 
-        liquid = sorted(out.values(), key=lambda x: x.get("vol_quote_24h", 0.0), reverse=True)
-        liquid = liquid[:limit]
+        liquid = sorted(out.values(), key=lambda x: x.get("vol_quote_24h", 0.0), reverse=True)[:limit]
 
         global MARKET_MAP, COINS_LIST
         MARKET_MAP = {f"{x['base']}-USDT": x for x in liquid}
@@ -413,6 +399,7 @@ def refresh_markets(limit: int = 60):
 
     except Exception as e:
         logger.exception("refresh_markets error: %s", e)
+
 
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, headers: dict | None = None, retries: int = 3):
     default_headers = {
@@ -584,20 +571,28 @@ def fetch_tickers_okx():
     params = {"instType": "SWAP"}
     j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
     if not j or not j.get("data"):
-        logger.warning("Public tickers API rỗng → fallback signed")
-        # fallback to signed (pass endpoint path)
-        j = okx_get_json_signed("/market/tickers" if "/api/v5" in OKX_BASE else "/api/v5/market/tickers", params={"instType": "SWAP"}, method="GET")
+        logger.warning("⚠️ Public tickers API rỗng hoặc lỗi → fallback signed")
+        j = okx_get_json_signed(
+            "/api/v5/market/tickers",
+            params={"instType": "SWAP"},
+            method="GET"
+        )
     return j.get("data", []) if j else []
 
-# Lấy danh sách instruments SWAP
+
 def fetch_instruments_okx():
     url = f"{OKX_BASE.rstrip('/')}/public/instruments"
     params = {"instType": "SWAP"}
     j = okx_get_json(url, params=params, headers={"User-Agent": "Mozilla/5.0"})
     if not j or not j.get("data"):
-        logger.warning("Public instruments API rỗng → fallback signed")
-        j = okx_get_json_signed("/public/instruments" if "/api/v5" in OKX_BASE else "/api/v5/public/instruments", params={"instType": "SWAP"}, method="GET")
+        logger.warning("⚠️ Public instruments API rỗng hoặc lỗi → fallback signed")
+        j = okx_get_json_signed(
+            "/api/v5/public/instruments",
+            params={"instType": "SWAP"},
+            method="GET"
+        )
     return j.get("data", []) if j else []
+
 
 # Lấy nến (candlestick) cho 1 coin
 def fetch_candles_okx(inst_id: str, bar: str = "1H", limit: int = 200):

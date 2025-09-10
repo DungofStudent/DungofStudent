@@ -676,7 +676,7 @@ def okx_get_json_signed(endpoint: str, params=None, method: str = "GET", timeout
     for attempt in range(retries):
         try:
             # timestamp in ISO with milliseconds and trailing Z
-            ts = dt.datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
+            ts = dt.datetime.now(dt.UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
             # prehash: timestamp + method + requestPath + body  (OKX expects full path incl. query if present)
             prehash = f"{ts}{method.upper()}{path}{query}{body}"
             sig = hmac.new(api_secret.encode("utf-8"), prehash.encode("utf-8"), hashlib.sha256).digest()

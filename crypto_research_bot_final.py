@@ -134,14 +134,14 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Varia
 PORT = int(os.getenv("PORT", 8080))
 
 # Render URL (chính + fallback)
-RENDER_URL = os.getenv("RENDER_EXTERNAL_URL", "").strip()
-if not RENDER_URL:
-    service_name = os.getenv("RENDER_SERVICE_NAME", "").strip()
-    if service_name:
-        RENDER_URL = f"https://{service_name}.onrender.com"
+# Railway URL (set trong Railway Variables)
+RAILWAY_URL = os.getenv("RAILWAY_URL", "").strip()
+if not RAILWAY_URL:
+    raise RuntimeError("❌ RAILWAY_URL chưa được set trong Railway Variables!")
 
 PTB_WEBHOOK_PATH = f"webhook/{TOKEN}"
-PTB_WEBHOOK_URL  = f"{RENDER_URL}/{PTB_WEBHOOK_PATH}"
+PTB_WEBHOOK_URL  = f"{RAILWAY_URL}/{PTB_WEBHOOK_PATH}"
+
 
 # Flask cần route CÓ dấu "/"
 FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"

@@ -2170,29 +2170,27 @@ async def debug_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================== MAIN ==================
 def main():
-    application = Application.builder().token(TOKEN).build()
-
-    # Handlers
+    # Đăng ký handlers
     application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("research", research_command))
-    application.add_handler(CommandHandler("research", research_handler))
-    application.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     application.add_handler(CallbackQueryHandler(callback_handler))
 
-    logger.info(f"🔗 Setting webhook to: {WEBHOOK_URL}")
+    # Chạy Flask + Healthcheck song song
+    def run_flask():
+        flask_app.run(host="0.0.0.0", port=PORT)
 
-if __name__ == "__main__":
-    # Healthcheck chạy port phụ (ví dụ 8081)
-    threading.Thread(target=lambda: start_healthcheck_server(port=8081), daemon=True).start()
+    threading.Thread(target=run_flask, daemon=True).start()
+    threading.Thread(target=start_healthcheck_server, args=(8081,), daemon=True).start()
 
     logger.info("🚀 Starting bot in webhook mode...")
-  # PTB run_webhook
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        url_path=PTB_WEBHOOK_PATH,
+        url_path=TOKEN,
         webhook_url=PTB_WEBHOOK_URL,
-        drop_pending_updates=True,
     )
+
+
+if __name__ == "__main__":
+    main()

@@ -34,6 +34,7 @@ import hmac
 import json
 import socketserver
 import http.server
+import httpx
 
 
 from dotenv import load_dotenv
@@ -141,6 +142,13 @@ PTB_WEBHOOK_URL  = f"{RENDER_URL}/{PTB_WEBHOOK_PATH}"
 
 # Flask cần route CÓ dấu "/"
 FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"
+
+OKX_DOMAINS = ["https://www.okx.com", "https://aws.okx.com"]
+
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (CryptoResearchBot)",
+    "Content-Type": "application/json"
+}
 
 logger.info(f"✅ Using PTB webhook URL: {PTB_WEBHOOK_URL}")
 logger.info(f"✅ Flask will listen on: {FLASK_WEBHOOK_PATH}")
@@ -343,18 +351,26 @@ app.add_error_handler(error_handler)
 # ================== OKX HELPERS ==================
 def refresh_markets(limit: int = 60):
     """
-    Refresh markets: fetch instruments + tickers, filter USDT-SWAP,
+    Refresh markets: fetch instruments + tickers (instType=SWAP),
+    filter USDT-SWAP,
     pick top by quote volume and populate global MARKET_MAP and COINS_LIST.
     """
     try:
-        inst_data = fetch_instruments_okx()
-        tickers = fetch_tickers_okx()
-        tick_map = {t.get("instId"): t for t in tickers}
+        # luôn truyền instType=SWAP để tránh lỗi 50014
+        inst_data = fetch_instruments_okx(instType="SWAP")
+        tickers = fetch_tickers_okx(instType="SWAP")
+
+        if not inst_data:
+            logger.warning("⚠️ Instruments API trả về rỗng")
+        if not tickers:
+            logger.warning("⚠️ Tickers API trả về rỗng")
+
+        tick_map = {t.get("instId"): t for t in tickers} if tickers else {}
 
         out = {}
-        for item in inst_data:
+        for item in inst_data or []:
             inst_id = item.get("instId", "")
-            # want USDT-SWAP only
+            # chỉ lấy USDT-SWAP
             if not inst_id.endswith("USDT-SWAP"):
                 continue
             base = item.get("uly")  # e.g. "BTC-USDT"
@@ -397,7 +413,6 @@ def refresh_markets(limit: int = 60):
 
     except Exception as e:
         logger.exception("refresh_markets error: %s", e)
-
 
 def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, headers: dict | None = None, retries: int = 3):
     default_headers = {
@@ -900,6 +915,34 @@ async def safe_edit(message, text, **kwargs):
         return await message.edit_text(text, **kwargs)
     except Exception:
         return await message.reply_text(text, **kwargs)
+
+
+
+async def okx_public_request(path: str, params: dict | None = None):
+    """Call OKX public API with fallback and headers"""
+    if params is None:
+        params = {}
+
+    # auto add instType=SWAP cho endpoints cần
+    if "instruments" in path or "tickers" in path:
+        params.setdefault("instType", "SWAP")
+
+    last_exc = None
+    for base in OKX_DOMAINS:
+        url = f"{base}{path}"
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(url, params=params, headers=DEFAULT_HEADERS)
+                if r.status_code == 200:
+                    return r.json()
+                else:
+                    logger.warning(f"Public request {url} → {r.status_code}. Response: {r.text[:200]}")
+        except Exception as e:
+            last_exc = e
+            logger.warning(f"Error request {url}: {e}")
+
+    raise last_exc if last_exc else Exception("All OKX domains failed")
+
 
 # ================== NEWS API ==================
 LAST_NEWS_CACHE = []

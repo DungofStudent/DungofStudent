@@ -1254,6 +1254,62 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
         "steps": steps
     }
 
+def suggest_dca_future(price: float, num_orders: int, support: Optional[float] = None, resistance: Optional[float] = None, direction: str = "long"):
+    """
+    Suggest DCA levels for futures trading.
+    - price: Current price of the asset.
+    - num_orders: Number of safety orders.
+    - support: Support price level (optional).
+    - resistance: Resistance price level (optional).
+    - direction: Trading direction ("long" or "short").
+    Returns a dict with DCA configuration.
+    """
+    if not price or price <= 0:
+        return {}
+    if num_orders <= 0:
+        return {}
+
+    leverage = 2  # Default leverage x2
+    tp_pct = 0.37  # Take-profit percentage
+
+    # Fallback support/resistance if not provided
+    if direction == "long" and (support is None or support <= 0):
+        support = price * 0.95  # Assume 5% below price as fallback
+    elif direction == "short" and (resistance is None or resistance <= 0):
+        resistance = price * 1.05  # Assume 5% above price as fallback
+
+    # Calculate max drawdown percentage
+    max_dd_pct = 0.0
+    if direction == "long" and support and support < price:
+        max_dd_pct = ((price - support) / price) * 100.0
+    elif direction == "short" and resistance and resistance > price:
+        max_dd_pct = ((resistance - price) / price) * 100.0
+    else:
+        max_dd_pct = 15.0  # Fallback drawdown assumption
+
+    avg_step_pct = max_dd_pct / num_orders if num_orders > 0 else 0.0
+
+    steps = []
+    for i in range(num_orders):
+        if direction == "long":
+            entry_price = price * (1 - avg_step_pct / 100 * i)
+        else:  # direction == "short"
+            entry_price = price * (1 + avg_step_pct / 100 * i)
+        steps.append({
+            "order": i + 1,
+            "price": round(entry_price, 6),
+            "step_pct": round(avg_step_pct, 4)
+        })
+
+    return {
+        "type": f"DCA Future ({num_orders} safety orders)",
+        "price_now": round(price, 6),
+        "tp_pct": tp_pct,
+        "leverage": leverage,
+        "avg_step_pct": round(avg_step_pct, 4),
+        "max_drawdown_pct": round(max_dd_pct, 2),
+        "steps": steps
+    }
 
 def suggest_grid_future(price: float, support: Optional[float] = None, resistance: Optional[float] = None, grids: int = 10):
     leverage = 20

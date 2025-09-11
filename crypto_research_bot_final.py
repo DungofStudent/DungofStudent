@@ -1314,7 +1314,7 @@ def research_choice_markup():
     keyboard = [
         [InlineKeyboardButton("📈 Long (Xu hướng tăng)", callback_data="research_long")],
         [InlineKeyboardButton("📉 Short (Xu hướng giảm)", callback_data="research_short")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -1989,7 +1989,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "bot_dca_btn":
         keyboard = [
             [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
-            [InlineKeyboardButton("⬅️ Quay lại", callback_data="main_menu")]
+            [InlineKeyboardButton("⬅️ Quay lại", callback_data="main")]
         ]
         await update.callback_query.message.edit_text(
             "Chọn chế độ lọc Bot DCA:",

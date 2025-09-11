@@ -447,7 +447,7 @@ def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFram
     params = {"instId": inst_id, "bar": bar, "limit": limit}
 
     # try public
-    j = okx_get_json(OKX_BASE.rstrip("/")  endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
     data = j.get("data", []) if j else []
     if not data:
         logger.debug(f"Public candles empty for {inst_id} -> fallback signed")

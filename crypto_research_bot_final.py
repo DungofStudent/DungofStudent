@@ -2219,12 +2219,7 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         except Exception:
             logger.exception(f"research error for {cid}")
             continue
-
-
-
     results = sorted(results, key=lambda x: (x["avg_score"], x["volq"], abs(x["pct_24h"])), reverse=True)[:25]
-
-
     if not results:
         await safe_send(context.bot,
             chat_id=chat_id,

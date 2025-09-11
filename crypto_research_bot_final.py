@@ -734,7 +734,7 @@ def get_ticker_okx(inst: str):
     url_endpoint = "/api/v5/market/ticker"
     params = {"instId": inst_id}
 
-    j = okx_get_json(OKX_BASE.rstrip("/")  url_endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    j = okx_get_json(OKX_BASE.rstrip("/") + url_endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
     data_list = j.get("data", []) if j else []
     if not data_list:
         logger.warning(f"Public ticker API rỗng → fallback signed {inst_id}")
@@ -747,7 +747,7 @@ def get_orderbook_okx(inst: str, depth: int = 50):
     inst_id = MARKET_MAP.get(inst, {}).get("inst_id", f"{inst}-SWAP")
     endpoint = "/api/v5/market/books"
     params = {"instId": inst_id, "sz": depth}
-    j = okx_get_json(OKX_BASE.rstrip("/")  endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
     data = j.get("data", []) if j else []
     if not data:
         logger.warning(f"Public orderbook API rỗng → fallback signed {inst_id}")
@@ -1540,7 +1540,7 @@ def get_funding_rate(symbol: str) -> float | None:
     try:
         endpoint = "/api/v5/public/funding-rate"
         params = {"instId": f"{symbol}-SWAP"}  # funding áp dụng cho contract SWAP
-        j = okx_get_json(OKX_BASE.rstrip("/")  endpoint, params=params)
+        j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params)
         data = j.get("data", []) if j else []
         if data:
             return float(data[0].get("fundingRate", 0))

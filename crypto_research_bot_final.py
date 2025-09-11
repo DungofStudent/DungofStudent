@@ -2386,7 +2386,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = update.message.text.strip().upper()
     if not text.endswith("-USDT") and not text.endswith("-USD"):
-        text = text  "-USDT"
+        text = text + "-USDT"
     coin = text
     waiting_msg = await safe_send(context.bot, chat_id=chat_id, text=f"⏳ Đang phân tích sâu cho {coin}...")
 

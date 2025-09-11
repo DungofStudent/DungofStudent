@@ -1313,7 +1313,7 @@ def research_choice_markup():
     keyboard = [
         [InlineKeyboardButton("📈 Long (Xu hướng tăng)", callback_data="research_long")],
         [InlineKeyboardButton("📉 Short (Xu hướng giảm)", callback_data="research_short")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
     ]
     return InlineKeyboardMarkup(keyboard)
 

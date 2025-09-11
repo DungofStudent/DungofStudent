@@ -1989,8 +1989,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "bot_dca_btn":
         keyboard = [
             [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
-            [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
-            [InlineKeyboardButton("🔎 Tất cả", callback_data="bot_dca_all")],
             [InlineKeyboardButton("⬅️ Quay lại", callback_data="main_menu")]
         ]
         await update.callback_query.message.edit_text(
@@ -2401,6 +2399,38 @@ async def refresh_markets_stub():
 
 async def debug_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔥 Raw update: {update.to_dict()}")
+
+async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    try:
+        url = "https://www.okx.com/api/v5/market/tickers"
+        params = {"instType": "SPOT"}   # hoặc "SWAP" nếu muốn futures
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        tickers = j.get("data", [])
+
+        # Sắp xếp theo volume USDT 24h (volCcy24h)
+        tickers = sorted(tickers, key=lambda x: float(x.get("volCcy24h", 0)), reverse=True)
+
+        top_list = tickers[:20]  # Lấy top 20 coin
+
+        lines = ["📊 <b>TOP COINS (OKX)</b>\n━━━━━━━━━━━━━━━━━━━━━"]
+        for t in top_list:
+            sym = t.get("instId", "")
+            last = t.get("last", "?")
+            vol = float(t.get("volCcy24h", 0))
+            pct = t.get("change24h", "?") if "change24h" in t else t.get("changePct", "?")
+
+            lines.append(f"<b>{sym}</b> | 💰 Giá: {last} | 💧Vol24h≈ {vol:,.0f} USDT | 📈 24h: {pct}")
+
+        reply = "\n".join(lines)
+        await safe_send(context.bot, chat_id=chat_id, text=reply, parse_mode="HTML")
+
+    except Exception as e:
+        logger.exception("top_coins_handler error")
+        await safe_send(context.bot, chat_id=chat_id, text="❌ Không lấy được Top Coins từ OKX.")
+
 
 # ================== MAIN ==================
 def main():

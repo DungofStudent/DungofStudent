@@ -930,7 +930,7 @@ async def safe_edit(message, text, **kwargs):
         text = "⚠️ Không có dữ liệu để hiển thị."
 
     if len(text) > MAX_LEN:
-        text = text[:MAX_LEN]  "\n... (cắt bớt)"
+        text = text[:MAX_LEN] + "\n... (cắt bớt)"
     try:
         return await message.edit_text(text, **kwargs)
     except Exception:

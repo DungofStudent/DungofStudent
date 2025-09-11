@@ -1615,7 +1615,7 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             s1h, _ = compute_trend_score(df1h)
             s4h, _ = compute_trend_score(df4h)
             s1d, _ = compute_trend_score(df1d)
-            avg_score = round((s15  s1h  s4h  s1d) / 4.0, 1)
+            avg_score = round((s15 + s1h + s4h + s1d) / 4.0, 1)
 
             # compute support/resistance on D1 for robust "hard" SR
             sup_d1, res_d1 = compute_support_resistance_from_df(df1d, window=90)

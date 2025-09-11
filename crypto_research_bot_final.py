@@ -1321,24 +1321,19 @@ def coins_page_markup(page: int):
     start = page * PAGE_SIZE
     end = start + PAGE_SIZE
     liquid_sorted = sorted(
-    COINS_LIST, key=lambda c: MARKET_MAP.get(c, {}).get("vol_quote_24h", 0), reverse=True
+        COINS_LIST, key=lambda c: MARKET_MAP.get(c, {}).get("vol_quote_24h", 0), reverse=True
     )
     items = liquid_sorted[start:end]
-
-
     keyboard = [[InlineKeyboardButton(c, callback_data=f"coin:{c}")] for c in items]
-
-
+    # Navigation row
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"topcoins:{page-1}"))
-    if end < len(COINS_LIST):
-        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page1}"))
+    if end < len(liquid_sorted):
+        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page+1}"))
     if nav:
         keyboard.append(nav)
-
-
-    # Add Home button
+    # Home button
     keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main")])
     return InlineKeyboardMarkup(keyboard)
 

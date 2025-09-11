@@ -1327,7 +1327,7 @@ def coins_page_markup(page:int):
     if page > 0: nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"topcoins:{page-1}"))
     if end < len(COINS_LIST): nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page+1}"))
     if nav: keyboard.append(nav)
-    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main")])
+    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
     return InlineKeyboardMarkup(keyboard)
 
 def coin_actions_markup(coin_id):

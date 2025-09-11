@@ -69,7 +69,7 @@ def ai_summarize(prompt: str) -> str:
     try:
         client = Groq(api_key=api_key)
         resp = client.chat.completions.create(
-            model="llama3-8b-8192",   # dùng model hợp lệ
+            model="llama-3.1-8b-instruct",   # dùng model hợp lệ
             messages=[
                 {
                     "role": "system",
@@ -463,7 +463,7 @@ def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFram
         "ts","open","high","low","close","vol","volCcy","volCcyQuote","confirm"
     ])
     # convert kiểu dữ liệu
-    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+    df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms", utc=True)
     numeric_cols = ["open","high","low","close","vol"]
     df[numeric_cols] = df[numeric_cols].astype(float)
 

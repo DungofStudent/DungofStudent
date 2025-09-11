@@ -1680,12 +1680,12 @@ async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             trend_score, trend_type = compute_trend_score(df1d)
 
             # lọc theo mode
-            if mode == "bull" and trend_type != "bullish":
-                continue
-            if mode == "bear" and trend_type != "bearish":
-                continue
-            if mode == "all" and abs(trend_score) < 60:
-                continue
+            if trend_type == "bullish":
+                trend_display = "🟢 Uptrend (Bull)"
+            elif trend_type == "bearish":
+                trend_display = "🔴 Downtrend (Bear)"
+            else:
+                trend_display = "⚪ Sideway"
 
             sup, res = compute_support_resistance_from_df(df1d, window=90)
             if not sup or sup >= price:
@@ -1702,16 +1702,16 @@ async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             kq30 = round(margin * 30 * (max_dd_pct/100), 3)
 
             text = (
-                f"🔎📊 {coin}\n"
-                f"💵 Giá hiện tại:  {price:.4f} \n"
-                f"🛡️ Hỗ trợ gần nhất:  {sup:.4f} \n"
-                f"Max Drawdown:  {max_dd_pct:.2f}% \n"
-                f"Trend Score:  {trend_score}\n  ({trend_type})\n\n"
-                f"➡️ Bước giá gợi ý:\n"
-                f"- 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
-                f"- 20 lệnh: {step20}% | Ký quỹ ≈ {kq20}\n"
-                f"- 30 lệnh: {step30}% | Ký quỹ ≈ {kq30}\n"
-                "——————————————"
+                f"🔎 <b>{coin}</b>\n"
+                f"💵 Giá: <b>{price:.4f}</b>\n"
+                f"🛡️ Hỗ trợ: {sup:.4f}\n"
+                f"📉 Max Drawdown: {max_dd_pct:.2f}%\n"
+                f"📊 Trend Score: <b>{trend_score}</b> | {trend_display}\n\n"
+                f"➡️ <b>Bước giá gợi ý</b> (margin ×20):\n"
+                f"• 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
+                f"• 20 lệnh: {step20}% | Ký quỹ ≈ {kq20}\n"
+                f"• 30 lệnh: {step30}% | Ký quỹ ≈ {kq30}\n"
+                "──────────────────────"
             )
             lines.append(text)
 

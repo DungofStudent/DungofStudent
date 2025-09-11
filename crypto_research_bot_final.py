@@ -56,7 +56,7 @@ from telegram.ext import (
 CRYPTOPANIC_KEY = "e7e42ec66da05ffb971daa4a81ab716ed3dbcee6"
 logger = logging.getLogger(__name__)
 
-OKX_BASE = "https://www.okx.com"
+OKX_BASE = "https://www.okx.com/api/v5"
 PROXY = None 
 
 #=================== Hàm AI tóm tắt tin tức bằng Groq LLM==============
@@ -2260,4 +2260,3 @@ def main():
     )
 if __name__ == "__main__":
     main()
-

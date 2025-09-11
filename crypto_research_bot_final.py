@@ -243,45 +243,61 @@ def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (O
     except Exception:
         return None, None
 
-def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
+def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
     """
-    Trả về (score, trend_type)
-    trend_type = 'bullish' | 'bearish'
+    Composite score (0..100) for 'clarity' of trend.
+    - EMA alignment & slope
+    - MACD vs signal & histogram sign
+    - RSI position (bullish: 50-70; bearish: 30-50)
+    - ADX strength (>20)
     """
-    if df is None or len(df) < 50:
-        return 0, "neutral"
+    if not isinstance(df, pd.DataFrame) or df.empty or len(df) < 50:
+        return 0.0, {}
 
-    df = df.copy()
-    df["ema20"] = df["close"].ewm(span=20).mean()
-    df["ema50"] = df["close"].ewm(span=50).mean()
+    inds = _indicators(df)
+    if not inds:
+        return 0.0, {}
 
-    # RSI
-    delta = df["close"].diff()
-    gain = delta.where(delta > 0, 0).rolling(14).mean()
-    loss = -delta.where(delta < 0, 0).rolling(14).mean()
-    rs = gain / (loss + 1e-9)
-    df["rsi"] = 100 - (100 / (1 + rs))
-    last = df.iloc[-1]
-    score = 0
+    d = df.copy().set_index("ts")
+    c = d["close"]
+    ema12 = d["close"].ewm(span=12).mean()
+    ema26 = d["close"].ewm(span=26).mean()
+    # Slope estimates (per bar)
+    slope12 = (ema12.iloc[-1] - ema12.iloc[-5]) / 5.0
+    slope26 = (ema26.iloc[-1] - ema26.iloc[-5]) / 5.0
 
-    if last["ema20"] > last["ema50"]:
-        score = 30
-    else:
-        score -= 30
+    score = 0.0
+    # EMA alignment and slope
+    if inds.get("ema12") is not None and inds.get("ema26") is not None:
+        if mode == "long" and inds["ema12"] > inds["ema26"] and slope12 > 0:
+            score += 30  # Bullish EMA alignment with positive slope
+        elif mode == "short" and inds["ema12"] < inds["ema26"] and slope12 < 0:
+            score += 30  # Bearish EMA alignment with negative slope
 
-    if last["rsi"] > 55:
-        score = 30
-    elif last["rsi"] < 45:
-        score -= 30
+    # MACD signal
+    if inds.get("macd") is not None and inds.get("macd_signal") is not None:
+        if mode == "long" and inds["macd"] > inds["macd_signal"] and inds["macd_hist"] > 0:
+            score += 30  # Bullish MACD crossover
+        elif mode == "short" and inds["macd"] < inds["macd_signal"] and inds["macd_hist"] < 0:
+            score += 30  # Bearish MACD crossover
 
-    if last["close"] > last["ema50"]:
-        score = 40
-    else:
-        score -= 40
+    # RSI position
+    if inds.get("rsi") is not None:
+        if mode == "long" and 50 <= inds["rsi"] <= 70:
+            score += 20  # RSI in bullish zone
+        elif mode == "short" and 30 <= inds["rsi"] <= 50:
+            score += 20  # RSI in bearish zone
+        elif inds["rsi"] > 70 or inds["rsi"] < 30:
+            score -= 10  # Overbought/oversold penalty
 
-    trend_type = "bullish" if score >= 60 else "bearish" if score <= -60 else "neutral"
-    return score, trend_type
+    # ADX strength
+    if inds.get("adx") is not None and inds["adx"] > 20:
+        score += 20  # Strong trend (ADX > 20)
 
+    # Normalize score to 0-100
+    score = max(0, min(100, score))
+
+    return score, inds
 
 
 def can_alert(coin: str, cooldown: int = 3600):

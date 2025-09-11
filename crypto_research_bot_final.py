@@ -2377,7 +2377,7 @@ async def debug_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔥 Raw update: {update.to_dict()}")
 
 async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-"""Fetch top coins by liquidity (from OKX) and show UI with Home button."""
+    """Fetch top coins by liquidity (from OKX) and show UI with Home button."""
     refresh_markets(limit=100)
     text = "🔥 Top Coins theo thanh khoản 24h (OKX):"
     await update.message.reply_text(text, reply_markup=coins_page_markup(0))

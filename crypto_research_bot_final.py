@@ -1488,75 +1488,74 @@ def suggest_grid_future(price: float, support: Optional[float] = None, resistanc
         "resistance": resistance
     }
 
-def is_new_coin(inst: dict, max_days: int = 30) -> bool:
+def is_new_coin(symbol: str, days: int = 30) -> bool:
     """
-    Kiểm tra coin mới list trong vòng `max_days` ngày.
+    Kiểm tra xem coin có phải là coin mới list không.
+    Logic: nếu trong MARKET_MAP có 'list_date' thì dùng,
+    nếu không có thì fallback dựa vào dữ liệu OHLC (thời điểm nến đầu tiên).
     """
-    try:
-        ts = int(inst.get("listTime", 0))
-        if ts <= 0:
-            return False
-        list_date = dt.datetime.fromtimestamp(ts/1000, tz=dt.UTC).date()
-        return (dt.datetime.now(dt.UTC).date() - list_date).days <= max_days
-    except Exception:
-        return False
-
-
-def get_funding_rate(inst_id: str) -> float:
-    """
-    Lấy funding rate hiện tại của coin từ OKX.
-    """
-    try:
-        j = okx_get_json("https://www.okx.com/api/v5/public/funding-rate", params={"instId": inst_id})
-        if j and "data" in j and j["data"]:
-            return float(j["data"][0].get("fundingRate", 0))
-    except Exception as e:
-        logger.warning(f"Funding rate error for {inst_id}: {e}")
-    return 0.0
-
-
-def filter_dca_candidates(instruments: list, tickers: list, vol_threshold: float = 10_000_000, growth_threshold: float = 20.0):
-    """
-    Lọc danh sách coin đủ điều kiện để tạo bot DCA.
-    Điều kiện:
-    - Khối lượng > vol_threshold
-    - Coin mới (≤ 30 ngày)
-    - Funding âm
-    - Tăng trưởng 24h > growth_threshold
-    """
-    inst_map = {i["instId"]: i for i in instruments}
-    out = []
-    for t in tickers:
+    info = MARKET_MAP.get(symbol, {})
+    list_date = info.get("list_date")
+    if list_date:
         try:
-            inst_id = t["instId"]
-            inst = inst_map.get(inst_id.replace("-SWAP", ""), {})
-            vol = float(t.get("volCcy24h", 0))
-            open24h = float(t.get("open24h", 0))
-            last = float(t.get("last", 0))
-            growth_pct = ((last - open24h) / open24h * 100) if open24h > 0 else 0
-            funding = get_funding_rate(inst_id)
+            first_date = pd.to_datetime(list_date, utc=True)
+            return (dt.datetime.now(dt.UTC) - first_date).days <= days
+        except Exception:
+            pass
 
-            if vol < vol_threshold:
-                continue
-            if not is_new_coin(inst):
-                continue
-            if funding >= 0:
-                continue
-            if growth_pct < growth_threshold:
-                continue
+    try:
+        df = get_ohlc_okx(symbol, bar="1D", limit=400)
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            first_date = df["ts"].min()
+            return (dt.datetime.now(dt.UTC) - first_date).days <= days
+    except Exception:
+        pass
 
-            out.append({
-                "instId": inst_id,
-                "vol": vol,
-                "last": last,
-                "growth": growth_pct,
-                "funding": funding,
-                "listTime": inst.get("listTime")
-            })
-        except Exception as e:
-            logger.warning(f"Error filtering {t}: {e}")
-    return out
+    return False
 
+
+def get_funding_rate(symbol: str) -> float | None:
+    """
+    Lấy funding rate của perpetual futures từ OKX.
+    Nếu không có trả về None.
+    """
+    try:
+        endpoint = "/api/v5/public/funding-rate"
+        params = {"instId": f"{symbol}-SWAP"}  # funding áp dụng cho contract SWAP
+        j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params)
+        data = j.get("data", []) if j else []
+        if data:
+            return float(data[0].get("fundingRate", 0))
+    except Exception as e:
+        logger.warning(f"⚠️ funding rate fetch failed for {symbol}: {e}")
+    return None
+
+
+def filter_dca_candidates(symbols: list[str]) -> list[str]:
+    """
+    Lọc danh sách coin theo tiêu chí đủ điều kiện DCA:
+    - Thanh khoản cao
+    - Coin mới
+    - Funding âm
+    - Tăng trưởng mạnh trong 24h
+    """
+    candidates = []
+    for cid in symbols:
+        try:
+            if not is_new_coin(cid):
+                continue
+            funding = get_funding_rate(cid)
+            if funding is None or funding >= 0:
+                continue
+            df1h = get_ohlc_okx(cid, bar="1H", limit=200)
+            growth = percent_change_over_period(df1h, lookback=24) or 0.0
+            if growth < 10:  # ví dụ yêu cầu >=10%
+                continue
+            candidates.append(cid)
+        except Exception:
+            logger.exception(f"filter_dca_candidates error for {cid}")
+            continue
+    return candidates
 
 # === Bot commands & handlers ===
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2227,6 +2226,95 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
         reply_markup=research_choice_markup()
     )
 
+async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"📩 Received /research_dca with args: {context.args}")
+    chat_id = update.effective_chat.id
+    await safe_send(context.bot, chat_id=chat_id, text="🤖 Đang quét coins đủ điều kiện tạo bot DCA...")
+
+    refresh_markets(MAX_SCAN)
+    liquid_syms = [c for c in COINS_LIST if MARKET_MAP.get(c, {}).get("vol_quote_24h", 0) >= MIN_QUOTE_VOL]
+    liquid_syms = sorted(liquid_syms, key=lambda c: MARKET_MAP[c]["vol_quote_24h"], reverse=True)[:100]
+# lọc theo điều kiện DCA
+    candidates = filter_dca_candidates(liquid_syms)
+	
+    results = []
+    for cid in liquid_syms:
+        try:
+            # --- Lọc theo điều kiện DCA ---
+            if not is_new_coin(cid):
+                continue
+            funding = get_funding_rate(cid)
+            if funding is None or funding >= 0:   # cần funding âm
+                continue
+            df1h = get_ohlc_okx(cid, bar="1H", limit=200)
+            growth = percent_change_over_period(df1h, lookback=24) or 0.0
+            if growth < 10:   # yêu cầu tăng trưởng mạnh > 10%/24h
+                continue
+
+            # --- Phân tích xu hướng (chỉ chọn xu hướng tăng) ---
+            avg, details = multi_tf_score(cid, mode="long")
+            per_tf_ok = all((details[tf]["score"] >= (55 if tf != "1D" else 45)) for tf in ["15m", "1H", "4H", "1D"])
+            if not per_tf_ok:
+                continue
+
+            # --- Support/Resistance ---
+            df_d1 = get_ohlc_okx(cid, bar="1D", limit=90)
+            sup_d1, res_d1 = compute_support_resistance_from_df(df_d1, window=90)
+            res, sup = compute_support_resistance(df1h, window=90)
+            price = float(df1h.iloc[-1]["close"]) if not df1h.empty else MARKET_MAP.get(cid, {}).get("current_price", 0)
+            entry = suggest_entry(details.get("1H", {}).get("inds", {}), price, sup, res, mode="long")
+
+            # --- DCA Config ---
+            cfg15 = suggest_dca_future(price, 15, support=sup_d1, resistance=res_d1, direction="long")
+            cfg20 = suggest_dca_future(price, 20, support=sup_d1, resistance=res_d1, direction="long")
+            cfg30 = suggest_dca_future(price, 30, support=sup_d1, resistance=res_d1, direction="long")
+
+            results.append({
+                "coin": cid,
+                "avg_score": round(avg, 1),
+                "s15": round(details["15m"]["score"], 1),
+                "s1h": round(details["1H"]["score"], 1),
+                "s4h": round(details["4H"]["score"], 1),
+                "s1d": round(details["1D"]["score"], 1),
+                "price": round(price, 8),
+                "pct_24h": round(growth, 2),
+                "entry": entry,
+                "resistance": round(res, 8) if res else None,
+                "support": round(sup, 8) if sup else None,
+                "volq": MARKET_MAP.get(cid, {}).get("vol_quote_24h", 0),
+                "funding": funding,
+                "dca_15": cfg15,
+                "dca_20": cfg20,
+                "dca_30": cfg30,
+            })
+        except Exception:
+            logger.exception(f"DCA research error for {cid}")
+            continue
+
+    results = sorted(results, key=lambda x: (x["avg_score"], x["volq"], x["pct_24h"]), reverse=True)[:20]
+
+    if not results:
+        await safe_send(context.bot,
+            chat_id=chat_id,
+            text="❌ Không tìm thấy coin nào đủ điều kiện để tạo bot DCA.",
+            reply_markup=research_choice_markup()
+        )
+        return
+
+    lines = ["🤖 KẾT QUẢ RESEARCH DCA — Coin mới, funding âm, tăng trưởng mạnh\n━━━━━━━━━━━━━━━━━━━━━"]
+    for r in results:
+        lines.append(
+            f"\n<b>{r['coin']}</b> | Score: <b>{r['avg_score']}</b>\n"
+            f"🧭 15m/1H/4H/1D: {r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']} \n"
+            f"💧 Vol24h≈ {r['volq']:,.0f} USDT \n"
+            f"💰 Giá: {r['price']} | 24h: {r['pct_24h']}% \n"
+            f"📉 Funding: {r['funding']}\n"
+            f"🎯 Entry gợi ý: {r['entry']}\n"
+            f"🛑 Kháng cự: {r['resistance']} | 🛡️ Hỗ trợ: {r['support']} \n"
+        )
+
+    reply = "\n".join(lines)
+    await safe_send(context.bot, chat_id=chat_id, text=reply, parse_mode="HTML", reply_markup=research_choice_markup())
 
 async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Received /deepcoin")
@@ -2323,6 +2411,7 @@ def main():
     # Handlers
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("research", research_handler))
+	application.add_handler(CommandHandler("research_dca", research_dca_handler))
     application.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     application.add_handler(CallbackQueryHandler(callback_handler))

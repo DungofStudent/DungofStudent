@@ -2357,7 +2357,7 @@ async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     coin = context.args[0].upper()
     if not coin.endswith("-USDT") and not coin.endswith("-USD"):
-        coin = coin  "-USDT"
+        coin = coin + "-USDT"
     waiting_msg = await safe_send(context.bot, chat_id, f"⏳ Đang phân tích sâu cho {coin}...")
 
     try:

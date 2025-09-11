@@ -1640,7 +1640,7 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # produce text compact
             line = (
-                f"<b>{coin}</b> | Score(avg): <b>{avg_score}</b>\n"
+                f" {coin}  | Score(avg):  {avg_score} \n"
                 f"15m/1H/4H/1D:  {int(s15)}/{int(s1h)}/{int(s4h)}/{int(s1d)} \n"
                 f"Price:  {price:.8f}  | 1DΔ:  {pct_24h:.2f}% \n"
                 f"Support(D1):  {sup_d1}  | Resistance(D1):  {res_d1} \n"
@@ -1702,16 +1702,15 @@ async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             kq30 = round(margin * 30 * (max_dd_pct/100), 3)
 
             text = (
-                f"🔎 <b>{coin}</b>\n"
-                f"Giá hiện tại:  {price:.4f} \n"
-                f"Support gần nhất:  {sup:.4f} \n"
+                f"🔎📊 {coin}\n"
+                f"💵 Giá hiện tại:  {price:.4f} \n"
+                f"🛡️ Hỗ trợ gần nhất:  {sup:.4f} \n"
                 f"Max Drawdown:  {max_dd_pct:.2f}% \n"
-                f"Trend Score: <b>{trend_score}</b> ({trend_type})\n\n"
+                f"Trend Score:  {trend_score}\n  ({trend_type})\n\n"
                 f"➡️ Bước giá gợi ý:\n"
                 f"- 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
                 f"- 20 lệnh: {step20}% | Ký quỹ ≈ {kq20}\n"
                 f"- 30 lệnh: {step30}% | Ký quỹ ≈ {kq30}\n"
-                f"(margin x20, step×=0.97, money×=1.05)\n"
                 "——————————————"
             )
             lines.append(text)
@@ -2013,14 +2012,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         d30 = dca_levels(price, 30, 0.22)
         grid10 = grid_levels(price, support=sup, resistance=res, grids=10)
         text = (
-            f"📊 <b>{coin}</b>\n"
-            f"💵 Giá hiện tại: <b>{price:.6f} USDT</b>\n"
+            f"📊  {coin} \n"
+            f"💵 Giá hiện tại:  {price:.6f} USDT \n"
             f"🛡️ Hỗ trợ gần nhất: {sup:.6f}\n\n"
-            f"⚙️ <b>Chiến lược DCA</b>\n"
+            f"⚙️  Chiến lược DCA \n"
             f"├ 15 lệnh: {', '.join(f'{x:.6f}' for x in d15)}\n"
             f"├ 20 lệnh: {', '.join(f'{x:.6f}' for x in d20)}\n"
             f"└ 30 lệnh: {', '.join(f'{x:.6f}' for x in d30)}\n\n"
-            f"📐 <b>Chiến lược Grid (10)</b>\n"
+            f"📐  Chiến lược Grid (10) \n"
             f"{' | '.join(f'{x:.6f}' for x in grid10)}\n"
         )
         await safe_send(context.bot, chat_id=chat_id, text=text, parse_mode="HTML")
@@ -2204,7 +2203,7 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
     lines = [f"📊 KẾT QUẢ RESEARCH ({mode.upper()}) — Ưu tiên Thanh khoản & Xu hướng rõ ràng\n━━━━━━━━━━━━━━━━━━━━━"]
     for r in results:
                 lines.append(
-            f"\n<b>{r['coin']}</b> | Score(avg): <b>{r['avg_score']}</b>\n"
+            f"\n {r['coin']}  | Score(avg):  {r['avg_score']} \n"
             f"🧭 15m/1H/4H/1D:  {r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']} \n"
             f"💧 Vol24h≈  {r['volq']:,.0f} USDT \n"
             f"💰 Giá:  {r['price']}  | 24h:  {r['pct_24h']}% \n"
@@ -2299,7 +2298,7 @@ async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     lines = ["🤖 KẾT QUẢ RESEARCH DCA — Coin mới, funding âm, tăng trưởng mạnh\n━━━━━━━━━━━━━━━━━━━━━"]
     for r in results:
         lines.append(
-            f"\n<b>{r['coin']}</b> | Score: <b>{r['avg_score']}</b>\n"
+            f"\n {r['coin']}  | Score:  {r['avg_score']} \n"
             f"🧭 15m/1H/4H/1D: {r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']} \n"
             f"💧 Vol24h≈ {r['volq']:,.0f} USDT \n"
             f"💰 Giá: {r['price']} | 24h: {r['pct_24h']}% \n"
@@ -2359,7 +2358,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         res, sup = compute_support_resistance(df, window=90)
         entry = suggest_entry(details.get("1H",{}).get("inds",{}), price, sup, res, mode="long")
         text_out = (
-            f"📊 <b>{coin}</b>\n"
+            f"📊  {coin} \n"
             f"💰 Giá hiện tại:  {round(price, 8)} \n"
             f"🧭 Score(15m/1H/4H/1D):  {details['15m']['score']:.0f}/{details['1H']['score']:.0f}/{details['4H']['score']:.0f}/{details['1D']['score']:.0f} \n"
             f"🎯 Entry gợi ý:  {entry} \n"

@@ -1488,6 +1488,74 @@ def suggest_grid_future(price: float, support: Optional[float] = None, resistanc
         "resistance": resistance
     }
 
+def is_new_coin(inst: dict, max_days: int = 30) -> bool:
+    """
+    Kiểm tra coin mới list trong vòng `max_days` ngày.
+    """
+    try:
+        ts = int(inst.get("listTime", 0))
+        if ts <= 0:
+            return False
+        list_date = dt.datetime.fromtimestamp(ts/1000, tz=dt.UTC).date()
+        return (dt.datetime.now(dt.UTC).date() - list_date).days <= max_days
+    except Exception:
+        return False
+
+
+def get_funding_rate(inst_id: str) -> float:
+    """
+    Lấy funding rate hiện tại của coin từ OKX.
+    """
+    try:
+        j = okx_get_json("https://www.okx.com/api/v5/public/funding-rate", params={"instId": inst_id})
+        if j and "data" in j and j["data"]:
+            return float(j["data"][0].get("fundingRate", 0))
+    except Exception as e:
+        logger.warning(f"Funding rate error for {inst_id}: {e}")
+    return 0.0
+
+
+def filter_dca_candidates(instruments: list, tickers: list, vol_threshold: float = 10_000_000, growth_threshold: float = 20.0):
+    """
+    Lọc danh sách coin đủ điều kiện để tạo bot DCA.
+    Điều kiện:
+    - Khối lượng > vol_threshold
+    - Coin mới (≤ 30 ngày)
+    - Funding âm
+    - Tăng trưởng 24h > growth_threshold
+    """
+    inst_map = {i["instId"]: i for i in instruments}
+    out = []
+    for t in tickers:
+        try:
+            inst_id = t["instId"]
+            inst = inst_map.get(inst_id.replace("-SWAP", ""), {})
+            vol = float(t.get("volCcy24h", 0))
+            open24h = float(t.get("open24h", 0))
+            last = float(t.get("last", 0))
+            growth_pct = ((last - open24h) / open24h * 100) if open24h > 0 else 0
+            funding = get_funding_rate(inst_id)
+
+            if vol < vol_threshold:
+                continue
+            if not is_new_coin(inst):
+                continue
+            if funding >= 0:
+                continue
+            if growth_pct < growth_threshold:
+                continue
+
+            out.append({
+                "instId": inst_id,
+                "vol": vol,
+                "last": last,
+                "growth": growth_pct,
+                "funding": funding,
+                "listTime": inst.get("listTime")
+            })
+        except Exception as e:
+            logger.warning(f"Error filtering {t}: {e}")
+    return out
 
 
 # === Bot commands & handlers ===

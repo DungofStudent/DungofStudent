@@ -133,7 +133,7 @@ MAX_SCAN = 200  # max instruments to scan from OKX
 TOKEN = os.getenv("TELEGRAM_TOKEN")  # Đặt trong Render → Environment Variables
 PORT = int(os.getenv("PORT", 8080))
 
-# Render URL (chính + fallback)
+# Render URL (chính  fallback)
 # Railway URL (set trong Railway Variables)
 RAILWAY_URL = os.getenv("RAILWAY_URL", "").strip()
 if not RAILWAY_URL:
@@ -210,7 +210,7 @@ alerts = {}
 # ================== Flask routes =====================
 @flask_app.route("/")
 def home():
-    return "✅ Bot is running with Flask + Polling!"
+    return "✅ Bot is running with Flask  Polling!"
 
 @flask_app.route(FLASK_WEBHOOK_PATH, methods=["GET", "POST", "HEAD"])
 def webhook():
@@ -260,24 +260,24 @@ def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
     delta = df["close"].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = -delta.where(delta < 0, 0).rolling(14).mean()
-    rs = gain / (loss + 1e-9)
-    df["rsi"] = 100 - (100 / (1 + rs))
+    rs = gain / (loss  1e-9)
+    df["rsi"] = 100 - (100 / (1  rs))
 
     last = df.iloc[-1]
     score = 0
 
     if last["ema20"] > last["ema50"]:
-        score += 30
+        score = 30
     else:
         score -= 30
 
     if last["rsi"] > 55:
-        score += 30
+        score = 30
     elif last["rsi"] < 45:
         score -= 30
 
     if last["close"] > last["ema50"]:
-        score += 40
+        score = 40
     else:
         score -= 40
 
@@ -320,7 +320,7 @@ def check_liquidity_strength(df):
         spread = (high - low) / low if low > 0 else 0
 
         # Điều kiện pump thật
-        if volume > 2 * avg_vol and spread > 0.01 and close > (open_ + (high - open_) * 0.5):
+        if volume > 2 * avg_vol and spread > 0.01 and close > (open_  (high - open_) * 0.5):
             return True, f"✅ Pump thật: Volume tăng mạnh ({volume:.2f}), spread {spread:.2%}"
 
         # Điều kiện pump giả (volume tăng nhưng spread nhỏ)
@@ -423,7 +423,7 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, header
             r = requests.get(url, params=params, headers=default_headers, timeout=timeout, proxies=proxies)
             if r.status_code in (403, 429, 500, 502, 503, 504):
                 wait = 2 ** attempt
-                logger.warning(f"Public request {url} → {r.status_code}. retry after {wait}s (attempt {attempt+1}/{retries})")
+                logger.warning(f"Public request {url} → {r.status_code}. retry after {wait}s (attempt {attempt1}/{retries})")
                 time.sleep(wait)
                 continue
             r.raise_for_status()
@@ -448,7 +448,7 @@ def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFram
     params = {"instId": inst_id, "bar": bar, "limit": limit}
 
     # try public
-    j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    j = okx_get_json(OKX_BASE.rstrip("/")  endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
     data = j.get("data", []) if j else []
     if not data:
         logger.debug(f"Public candles empty for {inst_id} -> fallback signed")
@@ -476,7 +476,7 @@ def detect_flow_signals(coin: str):
     Return dict with:
       { 'inflow': bool, 'inflow_strength': float, 'outflow': bool, 'outflow_strength': float, 'details': {...} }
     Logic:
-      - lấy 1H candles limit=25 (last hour + 24 previous 1H)
+      - lấy 1H candles limit=25 (last hour  24 previous 1H)
       - so sánh vol của last candle với mean(vol of previous 24 candles)
       - inflow nếu vol_last >= mean_prev * INFLOW_VOL_MULTIPLIER
       - outflow nếu vol_last >= mean_prev * OUTFLOW_VOL_MULTIPLIER and price change <= OUTFLOW_PRICE_DROP_PCT
@@ -573,7 +573,7 @@ def fetch_okx(url, params=None, retries=3, timeout=10):
             return r.json()
         except requests.exceptions.HTTPError as e:
             if r.status_code == 403:
-                logger.warning(f"403 Forbidden, retrying ({attempt+1}/{retries}) {url} {params}")
+                logger.warning(f"403 Forbidden, retrying ({attempt1}/{retries}) {url} {params}")
                 time.sleep(1.5)
             else:
                 logger.error(f"OKX HTTPError: {url} {params} {e}")
@@ -620,7 +620,7 @@ def fetch_okx_with_key(url, params=None, api_key="", api_pass="", api_secret="")
     headers = {
         "OK-ACCESS-KEY": api_key,
         "OK-ACCESS-PASSPHRASE": api_pass,
-        # Bạn có thể thêm signature + timestamp nếu gọi private endpoints
+        # Bạn có thể thêm signature  timestamp nếu gọi private endpoints
         "User-Agent": "Mozilla/5.0",
         "Accept": "application/json",
         "Referer": "https://www.okx.com/"
@@ -642,7 +642,7 @@ def okx_sign_request(method: str, path: str, body: str = ""):
         return {}
 
     # timestamp dạng 2025-09-05T03:30:00.000Z
-    timestamp = dt.datetime.now(dt.UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    timestamp = dt.datetime.now(dt.UTC).isoformat(timespec="milliseconds").replace("00:00", "Z")
 
     # message cần ký
     prehash = f"{timestamp}{method.upper()}{path}{body}"
@@ -683,18 +683,18 @@ def okx_get_json_signed(endpoint: str, params=None, method: str = "GET", timeout
     body = ""
 
     if method.upper() == "GET" and params:
-        query = "?" + urlencode(params)
+        query = "?"  urlencode(params)
     elif method.upper() in ("POST", "PUT") and params is not None:
         body = json.dumps(params, separators=(",", ":"), ensure_ascii=False)
 
-    url = base_url + path + query
+    url = base_url  path  query
     proxies = {"http": PROXY, "https": PROXY} if globals().get("PROXY") else None
 
     for attempt in range(retries):
         try:
             # timestamp in ISO with milliseconds and trailing Z
-            ts = dt.datetime.now(dt.UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-            # prehash: timestamp + method + requestPath + body  (OKX expects full path incl. query if present)
+            ts = dt.datetime.now(dt.UTC).isoformat(timespec="milliseconds").replace("00:00", "Z")
+            # prehash: timestamp  method  requestPath  body  (OKX expects full path incl. query if present)
             prehash = f"{ts}{method.upper()}{path}{query}{body}"
             sig = hmac.new(api_secret.encode("utf-8"), prehash.encode("utf-8"), hashlib.sha256).digest()
             sign_b64 = base64.b64encode(sig).decode()
@@ -713,7 +713,7 @@ def okx_get_json_signed(endpoint: str, params=None, method: str = "GET", timeout
             r = requests.request(method.upper(), url, headers=headers, data=body if body else None, timeout=timeout, proxies=proxies)
             if r.status_code in (403, 429, 500, 502, 503, 504):
                 wait = 2 ** attempt
-                logger.warning(f"Signed request {url} → {r.status_code}. retry after {wait}s (attempt {attempt+1}/{retries})")
+                logger.warning(f"Signed request {url} → {r.status_code}. retry after {wait}s (attempt {attempt1}/{retries})")
                 time.sleep(wait)
                 continue
             r.raise_for_status()
@@ -735,7 +735,7 @@ def get_ticker_okx(inst: str):
     url_endpoint = "/api/v5/market/ticker"
     params = {"instId": inst_id}
 
-    j = okx_get_json(OKX_BASE.rstrip("/") + url_endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    j = okx_get_json(OKX_BASE.rstrip("/")  url_endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
     data_list = j.get("data", []) if j else []
     if not data_list:
         logger.warning(f"Public ticker API rỗng → fallback signed {inst_id}")
@@ -748,7 +748,7 @@ def get_orderbook_okx(inst: str, depth: int = 50):
     inst_id = MARKET_MAP.get(inst, {}).get("inst_id", f"{inst}-SWAP")
     endpoint = "/api/v5/market/books"
     params = {"instId": inst_id, "sz": depth}
-    j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    j = okx_get_json(OKX_BASE.rstrip("/")  endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
     data = j.get("data", []) if j else []
     if not data:
         logger.warning(f"Public orderbook API rỗng → fallback signed {inst_id}")
@@ -914,7 +914,7 @@ async def safe_send(bot, chat_id, text, **kwargs):
         text = "⚠️ Không có dữ liệu để hiển thị."
 
     if len(text) > MAX_LEN:
-        text = text[:MAX_LEN] + "\n... (cắt bớt)"
+        text = text[:MAX_LEN]  "\n... (cắt bớt)"
     try:
         # Escape toàn bộ text trước khi gửi (khi dùng HTML)
         if kwargs.get("parse_mode") == "HTML":
@@ -931,7 +931,7 @@ async def safe_edit(message, text, **kwargs):
         text = "⚠️ Không có dữ liệu để hiển thị."
 
     if len(text) > MAX_LEN:
-        text = text[:MAX_LEN] + "\n... (cắt bớt)"
+        text = text[:MAX_LEN]  "\n... (cắt bớt)"
     try:
         return await message.edit_text(text, **kwargs)
     except Exception:
@@ -1164,8 +1164,8 @@ def _indicators(df: pd.DataFrame):
 def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
     """
     Composite score (0..100) for 'clarity' of trend.
-    - EMA alignment + slope
-    - MACD vs signal + histogram sign
+    - EMA alignment  slope
+    - MACD vs signal  histogram sign
     - RSI position (bullish: 50-70; bearish: 30-50)
     - ADX strength (>20)
     """
@@ -1187,32 +1187,32 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
     # EMA alignment
     if inds.get("ema12") is not None and inds.get("ema26") is not None:
         if mode == "long" and inds["ema12"] > inds["ema26"]:
-            score += 25
+            score = 25
         if mode == "short" and inds["ema12"] < inds["ema26"]:
-            score += 25
+            score = 25
     # slopes
     if mode == "long" and slope12 > 0 and slope26 > 0:
-        score += 20
+        score = 20
     if mode == "short" and slope12 < 0 and slope26 < 0:
-        score += 20
+        score = 20
     # MACD
     macd = inds.get("macd"); sig = inds.get("macd_signal"); hist = inds.get("macd_hist")
     if macd is not None and sig is not None and hist is not None:
         if mode == "long" and macd > sig and hist > 0:
-            score += 25
+            score = 25
         if mode == "short" and macd < sig and hist < 0:
-            score += 25
+            score = 25
     # RSI
     rsi = inds.get("rsi")
     if rsi is not None:
         if mode == "long" and 50 <= rsi <= 70:
-            score += 15
+            score = 15
         if mode == "short" and 30 <= rsi <= 50:
-            score += 15
+            score = 15
     # ADX
     adx = inds.get("adx")
     if adx is not None and adx >= 20:
-        score += 15
+        score = 15
 
     score = max(0.0, min(100.0, score))
     return score, inds
@@ -1287,7 +1287,7 @@ def ai_news_analysis(coin: str, news_list: list) -> str:
         return "🧠 Không có tin tức để AI phân tích."
     
     # Ví dụ đơn giản: kết hợp các tin thành prompt
-    prompt = f"Phân tích các tin tức gần đây về {coin}:\n" + "\n".join(news_list)
+    prompt = f"Phân tích các tin tức gần đây về {coin}:\n"  "\n".join(news_list)
     
     # Gọi hàm AI của bạn (giả sử ai_text = ai_summarize(prompt))
     try:
@@ -1320,7 +1320,7 @@ def research_choice_markup():
 
 def coins_page_markup(page: int):
     start = page * PAGE_SIZE
-    end = start + PAGE_SIZE
+    end = start  PAGE_SIZE
     liquid_sorted = sorted(
     COINS_LIST, key=lambda c: MARKET_MAP.get(c, {}).get("vol_quote_24h", 0), reverse=True
     )
@@ -1334,7 +1334,7 @@ def coins_page_markup(page: int):
     if page > 0:
         nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"topcoins:{page-1}"))
     if end < len(COINS_LIST):
-        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page+1}"))
+        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page1}"))
     if nav:
         keyboard.append(nav)
 
@@ -1344,10 +1344,9 @@ def coins_page_markup(page: int):
     return InlineKeyboardMarkup(keyboard)
 
 def bot_dca_menu():
+    # Simplified: only keep Bull option for Bot DCA (as requested)
     keyboard = [
-        [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
-        [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
-        [InlineKeyboardButton("📊 Tất cả Coin", callback_data="bot_dca_all")],
+        [InlineKeyboardButton("📈 Xu hướng Tăng (Bot DCA)", callback_data="bot_dca_bull")],
         [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -1413,7 +1412,7 @@ def dca_levels(price: float, num_orders: int = 15, total_range_pct: float = 0.15
         return []
     bottom = price * (1 - total_range_pct)
     steps = []
-    for i in range(1, num_orders + 1):
+    for i in range(1, num_orders  1):
         level = price - (i / num_orders) * (price - bottom)
         steps.append(round(level, 8))
     return steps
@@ -1421,7 +1420,7 @@ def dca_levels(price: float, num_orders: int = 15, total_range_pct: float = 0.15
 def grid_levels(price: float, support: float = None, resistance: float = None, grids: int = 10):
     """
     Suggest grid levels for futures grid bot.
-    If support/resistance provided, generate grids between them; otherwise use +/-5% around price.
+    If support/resistance provided, generate grids between them; otherwise use /-5% around price.
     Returns list of grid prices (ascending).
     """
     if price is None or price <= 0:
@@ -1434,8 +1433,8 @@ def grid_levels(price: float, support: float = None, resistance: float = None, g
         low = price * 0.95
         high = price * 1.05
     levels = []
-    for i in range(grids + 1):
-        lvl = low + (i / grids) * (high - low)
+    for i in range(grids  1):
+        lvl = low  (i / grids) * (high - low)
         levels.append(round(lvl, 8))
     return levels
 
@@ -1464,9 +1463,9 @@ def suggest_dca_future(price: float, num_orders: int, support: Optional[float] =
 
     steps = []
     for i in range(num_orders):
-        entry_price = price * (1 - avg_step_pct/100 * (i+1))
+        entry_price = price * (1 - avg_step_pct/100 * (i1))
         steps.append({
-            "order": i+1,
+            "order": i1,
             "price": round(entry_price, 6),
             "step_pct": round(avg_step_pct, 4)
         })
@@ -1493,8 +1492,8 @@ def suggest_grid_future(price: float, support: Optional[float] = None, resistanc
     step_pct = ((resistance - support) / support) / grids * 100
 
     levels = []
-    for i in range(grids + 1):
-        lvl = support + (i / grids) * (resistance - support)
+    for i in range(grids  1):
+        lvl = support  (i / grids) * (resistance - support)
         levels.append(round(lvl, 6))
 
     return {
@@ -1542,7 +1541,7 @@ def get_funding_rate(symbol: str) -> float | None:
     try:
         endpoint = "/api/v5/public/funding-rate"
         params = {"instId": f"{symbol}-SWAP"}  # funding áp dụng cho contract SWAP
-        j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params)
+        j = okx_get_json(OKX_BASE.rstrip("/")  endpoint, params=params)
         data = j.get("data", []) if j else []
         if data:
             return float(data[0].get("fundingRate", 0))
@@ -1587,7 +1586,7 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     This function will:
       - compute simple scores for multiple timeframes
       - compute support/resistance D1
-      - produce DCA (15/20/30) + Grid suggestion (10)
+      - produce DCA (15/20/30)  Grid suggestion (10)
     """
     args = context.args or []
     coins = [a.upper() for a in args] if args else list(MARKET_MAP.keys())[:20]
@@ -1617,7 +1616,7 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             s1h, _ = compute_trend_score(df1h)
             s4h, _ = compute_trend_score(df4h)
             s1d, _ = compute_trend_score(df1d)
-            avg_score = round((s15 + s1h + s4h + s1d) / 4.0, 1)
+            avg_score = round((s15  s1h  s4h  s1d) / 4.0, 1)
 
             # compute support/resistance on D1 for robust "hard" SR
             sup_d1, res_d1 = compute_support_resistance_from_df(df1d, window=90)
@@ -1660,33 +1659,70 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     out = "\n\n".join(lines) if lines else "No results"
     await update.message.reply_text(out, parse_mode="HTML", disable_web_page_preview=True)
 
-async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "all"):
+async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "bull"):
     """
-    Quét các coin có thanh khoản cao + xu hướng rõ ràng để gợi ý bot DCA.
-    mode = all | bull | bear
+    Optimized scan for Bot DCA candidates.
+    Only Bull mode supported (as requested). Conditions:
+      - vol_quote_24h >= MIN_QUOTE_VOL
+      - is_new_coin(...) == True  (if REQUIRE_NEW_COIN)
+      - funding rate < 0 (if REQUIRE_FUNDING_NEGATIVE)
+      - 24h growth >= MIN_24H_GROWTH_PCT
     """
+    # Tuning parameters (you can adjust these constants)
+    MIN_QUOTE_VOL_LOCAL = globals().get("MIN_QUOTE_VOL", 10_000_000)
+    MIN_24H_GROWTH_PCT = 5.0          # minimal 24h increase (%) to consider
+    REQUIRE_NEW_COIN = True           # only consider new listings
+    REQUIRE_FUNDING_NEGATIVE = True   # require funding < 0
+    MAX_COINS_TO_CHECK = 120         # limit to speed up scan
+
     lines = []
-    for coin, info in MARKET_MAP.items():
+    checked = 0
+    # iterate top liquidity coins first
+    for coin, info in sorted(MARKET_MAP.items(), key=lambda kv: kv[1].get("vol_quote_24h", 0), reverse=True):
+        if checked >= MAX_COINS_TO_CHECK:
+            break
+        checked = 1
         try:
             price = info.get("current_price")
             volq = info.get("vol_quote_24h", 0)
-            if not price or volq < 10_000_000:
+            if not price or volq < MIN_QUOTE_VOL_LOCAL:
                 continue
 
+            # D1 candles to compute trendscore/support
             df1d = get_ohlc_okx(coin, bar="1D", limit=200)
-            if df1d.empty:
+            if df1d.empty or len(df1d) < 30:
                 continue
 
+            # require bullish trend on D1 (compute_trend_score returns (score, type))
             trend_score, trend_type = compute_trend_score(df1d)
+            if trend_type != "bullish":
+                continue
 
-            # lọc theo mode
-            if trend_type == "bullish":
-                trend_display = "🟢 Uptrend (Bull)"
-            elif trend_type == "bearish":
-                trend_display = "🔴 Downtrend (Bear)"
-            else:
-                trend_display = "⚪ Sideway"
+            # optional require new coin (helps pick momentum listings)
+            if REQUIRE_NEW_COIN and not is_new_coin(coin, days=60):
+                continue
 
+            # funding rate negative requirement
+            if REQUIRE_FUNDING_NEGATIVE:
+                try:
+                    funding = get_funding_rate(coin.replace("-USDT",""))  # get_funding_rate expects symbol format mostly
+                    if funding is None or funding >= 0:
+                        continue
+                except Exception:
+                    continue
+
+            # 24h growth
+            # compute approximate 24h change using df1d last two rows
+            try:
+                last = float(df1d.iloc[-1]["close"])
+                prev = float(df1d.iloc[-2]["close"])
+                growth_24h = ((last - prev) / prev) * 100.0 if prev != 0 else 0.0
+            except Exception:
+                growth_24h = 0.0
+            if growth_24h < MIN_24H_GROWTH_PCT:
+                continue
+
+            # support (D1)
             sup, res = compute_support_resistance_from_df(df1d, window=90)
             if not sup or sup >= price:
                 continue
@@ -1701,29 +1737,33 @@ async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             kq20 = round(margin * 20 * (max_dd_pct/100), 3)
             kq30 = round(margin * 30 * (max_dd_pct/100), 3)
 
+            # pretty trend label
+            trend_label = "🟢 Uptrend (Bull)" if trend_type == "bullish" else "⚪ Neutral"
+
             text = (
-                f"🔎  {coin} \n"
-                f"💵 Giá:  {price:.4f} \n"
-                f"🛡️ Hỗ trợ: {sup:.4f}\n"
-                f"📉 Max Drawdown: {max_dd_pct:.2f}%\n"
-                f"📊 Trend Score:  {trend_score}  | {trend_display}\n\n"
-                f"➡️  Bước giá gợi ý  (margin ×20):\n"
-                f"• 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
-                f"• 20 lệnh: {step20}% | Ký quỹ ≈ {kq20}\n"
-                f"• 30 lệnh: {step30}% | Ký quỹ ≈ {kq30}\n"
-                "──────────────────────"
+                f"🔎 <b>{coin}</b>\n"
+                f"💵 Giá hiện tại: <b>{price:.6f}</b>\n"
+                f"💧 Vol24h: ~{int(volq):,} USDT\n"
+                f"🛡️ Support (D1): {sup:.6f} | Resistance: {res:.6f}\n"
+                f"📉 Max Drawdown cần: {max_dd_pct:.2f}%\n"
+                f"📊 Trend Score: <b>{trend_score:.0f}</b> | {trend_label}\n"
+                f"📈 24h growth: {growth_24h:.2f}%\n\n"
+                f"➡️ <b>Bước giá gợi ý</b> (margin×{margin}):\n"
+                f"• 15 orders: {step15}% | Ký quỹ ≈ {kq15}\n"
+                f"• 20 orders: {step20}% | Ký quỹ ≈ {kq20}\n"
+                f"• 30 orders: {step30}% | Ký quỹ ≈ {kq30}\n"
+                f"🔗 Funding: {funding if 'funding' in locals() else 'N/A'}\n"
+                "────────────────────────"
             )
             lines.append(text)
 
         except Exception as e:
-            logger.error(f"DCA research error {coin}: {e}")
+            logger.exception(f"DCA research error {coin}: {e}")
             continue
 
     out = "\n\n".join(lines) if lines else "❌ Không tìm thấy coin phù hợp."
     chat_id = update.effective_chat.id
     await safe_send(context.bot, chat_id=chat_id, text=out, parse_mode="HTML", disable_web_page_preview=True)
-
-
 async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /dca <COIN>
@@ -1734,7 +1774,7 @@ async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /dca COIN (e.g. /dca BTC-USDT)")
         return
     coin = args[0].upper()
-    # fetch price + SR D1
+    # fetch price  SR D1
     df1h = get_ohlc_okx(coin, bar="1H", limit=200)
     df1d = get_ohlc_okx(coin, bar="1D", limit=200)
     price = None
@@ -1930,7 +1970,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("ind:"):
         coin = data.split(":")[1]
         df = get_ohlc_okx(coin, bar="1H", limit=200)
-        _, inds = compute_trend_score(df, mode="long")  # returns score + inds
+        _, inds = compute_trend_score(df, mode="long")  # returns score  inds
         if not inds:
             await safe_send(context.bot,chat_id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
             return
@@ -1967,7 +2007,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		
     elif data == "news_market_menu":
         news_list = get_news_today(limit=10)
-        text = "📰 Tin tức hôm nay:\n\n" + "\n\n".join(news_list)
+        text = "📰 Tin tức hôm nay:\n\n"  "\n\n".join(news_list)
         await query.message.reply_text(text)
 
     elif data.startswith("news_menu:"):
@@ -1977,13 +2017,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("news_market:"):
         coin = data.split(":")[1]
         news_list = get_news_general()
-        news_text = "📰 Tin tức thị trường:\n\n" + "\n\n".join(news_list)
+        news_text = "📰 Tin tức thị trường:\n\n"  "\n\n".join(news_list)
         await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     elif data.startswith("news_coin:"):
         coin = data.split(":")[1]
         news_list = get_news_coin(coin)
-        news_text = f"💡 Tin tức về {coin}:\n\n" + "\n\n".join(news_list)
+        news_text = f"💡 Tin tức về {coin}:\n\n"  "\n\n".join(news_list)
         await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     if data == "research_long":
@@ -1991,15 +2031,15 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "research_short":
         await research_handler(update, context, mode="short")
-
+    
     elif data == "bot_dca_btn":
-        await query.message.edit_text("Chọn chế độ lọc Bot DCA:", reply_markup=bot_dca_menu())
+        # only Bull option (user requested removal of bear/all)
+        await update.callback_query.message.edit_text(
+            "Chọn chế độ lọc Bot DCA: (chỉ Bull)",
+            reply_markup=bot_dca_menu()
+        )
     elif data == "bot_dca_bull":
         await research_dca_bot(update, context, mode="bull")
-    elif data == "bot_dca_bear":
-        await research_dca_bot(update, context, mode="bear")
-    elif data == "bot_dca_all":
-        await research_dca_bot(update, context, mode="all")
 
     elif data.startswith("dca:"):
         coin = data.split(":")[1]
@@ -2051,12 +2091,12 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                 articles = []
             new_articles = []
             for a in articles:
-                uid = a  # fallback: use full string as ID (title+link). If you have an URL field, use that instead.
+                uid = a  # fallback: use full string as ID (titlelink). If you have an URL field, use that instead.
                 if uid not in LAST_NEWS_IDS:
                     LAST_NEWS_IDS.add(uid)
                     new_articles.append(a)
             if new_articles:
-                text = "📰 Tin tức thị trường (mới):\n\n" + "\n\n".join(new_articles)
+                text = "📰 Tin tức thị trường (mới):\n\n"  "\n\n".join(new_articles)
                 for chat in list(ALERT_CHAT_IDS):
                     try:
                         await safe_send(context.bot,chat_id=chat, text=text)
@@ -2318,7 +2358,7 @@ async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     coin = context.args[0].upper()
     if not coin.endswith("-USDT") and not coin.endswith("-USD"):
-        coin = coin + "-USDT"
+        coin = coin  "-USDT"
     waiting_msg = await safe_send(context.bot, chat_id, f"⏳ Đang phân tích sâu cho {coin}...")
 
     try:
@@ -2329,7 +2369,7 @@ async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         res, sup = compute_support_resistance(df, window=90)
         ai_text = ai_analysis(coin, details, volq, "long")
         news_list = get_news_coin(coin)
-        news_text = "📰 Tin tức gần đây:\n" + "\n\n".join(news_list)
+        news_text = "📰 Tin tức gần đây:\n"  "\n\n".join(news_list)
         tech_text = (
             f"📊 Tóm tắt kỹ thuật:\n"
             f"- Giá: {price}\n- Kháng cự: {res}\n- Hỗ trợ: {sup}\n"
@@ -2337,7 +2377,7 @@ async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         ai_news_text = ai_news_analysis(coin, news_list)
 
-        final_text = news_text + "\n\n" + ai_news_text + "\n\n" + tech_text + "\n\n" + ai_text
+        final_text = news_text  "\n\n"  ai_news_text  "\n\n"  tech_text  "\n\n"  ai_text
         await waiting_msg.edit_text(final_text)
     except Exception as e:
         logger.exception(f"deepcoin_handler error: {e}")
@@ -2347,7 +2387,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     text = update.message.text.strip().upper()
     if not text.endswith("-USDT") and not text.endswith("-USD"):
-        text = text + "-USDT"
+        text = text  "-USDT"
     coin = text
     waiting_msg = await safe_send(context.bot, chat_id=chat_id, text=f"⏳ Đang phân tích sâu cho {coin}...")
 
@@ -2368,9 +2408,9 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         ai_text = ai_analysis(coin, details, volq, "long")
         news_list = get_news_coin(coin)
-        news_text = "📰 Tin tức liên quan:\n" + "\n\n".join(news_list)
+        news_text = "📰 Tin tức liên quan:\n"  "\n\n".join(news_list)
         ai_news_text = ai_news_analysis(coin, news_list)
-        final_text = text_out + "\n\n" + news_text + "\n\n" + ai_news_text + "\n\n" + ai_text
+        final_text = text_out  "\n\n"  news_text  "\n\n"  ai_news_text  "\n\n"  ai_text
         if waiting_msg:
             await waiting_msg.edit_text(final_text, parse_mode=None)
         else:

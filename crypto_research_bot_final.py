@@ -1702,12 +1702,12 @@ async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             kq30 = round(margin * 30 * (max_dd_pct/100), 3)
 
             text = (
-                f"🔎 <b>{coin}</b>\n"
-                f"💵 Giá: <b>{price:.4f}</b>\n"
+                f"🔎  {coin} \n"
+                f"💵 Giá:  {price:.4f} \n"
                 f"🛡️ Hỗ trợ: {sup:.4f}\n"
                 f"📉 Max Drawdown: {max_dd_pct:.2f}%\n"
-                f"📊 Trend Score: <b>{trend_score}</b> | {trend_display}\n\n"
-                f"➡️ <b>Bước giá gợi ý</b> (margin ×20):\n"
+                f"📊 Trend Score:  {trend_score}  | {trend_display}\n\n"
+                f"➡️  Bước giá gợi ý  (margin ×20):\n"
                 f"• 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
                 f"• 20 lệnh: {step20}% | Ký quỹ ≈ {kq20}\n"
                 f"• 30 lệnh: {step30}% | Ký quỹ ≈ {kq30}\n"

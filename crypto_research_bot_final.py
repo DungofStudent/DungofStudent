@@ -443,9 +443,10 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, header
 
 
 
-def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200):
+def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFrame:
     endpoint = "/api/v5/market/candles"
     params = {"instId": inst_id, "bar": bar, "limit": limit}
+
     # try public
     j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
     data = j.get("data", []) if j else []
@@ -453,8 +454,24 @@ def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200):
         logger.debug(f"Public candles empty for {inst_id} -> fallback signed")
         j = okx_get_json_signed(endpoint, params=params, method="GET")
         data = j.get("data", []) if j else []
-    # chuẩn hóa thành DataFrame được xử lý ở nơi khác trong cơ sở mã của bạn; ở đây trả về danh sách thô
-    return data
+
+    if not data:
+        return pd.DataFrame()
+
+    # OKX trả data dạng [[ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm], ...]
+    df = pd.DataFrame(data, columns=[
+        "ts","open","high","low","close","vol","volCcy","volCcyQuote","confirm"
+    ])
+    # convert kiểu dữ liệu
+    df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+    numeric_cols = ["open","high","low","close","vol"]
+    df[numeric_cols] = df[numeric_cols].astype(float)
+
+    # đảo ngược để chronological (OKX trả mới → cũ)
+    df = df.iloc[::-1].reset_index(drop=True)
+
+    return df
+
 		
 def detect_flow_signals(coin: str):
     """
@@ -1076,14 +1093,14 @@ def get_news_today(limit: int = 10):
         r.raise_for_status()
         j = r.json()
         articles = j.get("news", [])
-        today = dt.datetime.utcnow().date()
+        today = dt.datetime.now(dt.UTC).date()
         out = []
         for a in articles:
             title = a.get("title", "")
             link = a.get("link", "")
             pub_ts = a.get("publishedAt")  # timestamp UTC
             if title and link and pub_ts:
-                pub_date = datetime.utcfromtimestamp(pub_ts).date()
+                pub_date = dt.datetime.fromtimestamp(pub_ts / 1000, tz=dt.UTC).date()
                 if pub_date == today:
                     out.append(f"- {title}\n🔗 {link}")
             if len(out) >= limit:
@@ -1154,9 +1171,7 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
     - RSI position (bullish: 50-70; bearish: 30-50)
     - ADX strength (>20)
     """
-    if df is None:
-        return 0.0, {}
-    if df.empty or len(df) < 50:
+    if not isinstance(df, pd.DataFrame) or df.empty or len(df) < 50:
         return 0.0, {}
     inds = _indicators(df)
     if not inds:

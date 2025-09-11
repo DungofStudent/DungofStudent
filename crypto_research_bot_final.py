@@ -2013,21 +2013,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         d30 = dca_levels(price, 30, 0.22)
         grid10 = grid_levels(price, support=sup, resistance=res, grids=10)
         text = (
-            f"⚙️ DCA & Grid suggestions for {coin}\n"
-            f"Price: {price}\n\n"
-            f"DCA (15 orders):\n{', '.join(map(str,d15))}\n\n"
-            f"DCA (20 orders):\n{', '.join(map(str,d20))}\n\n"
-            f"DCA (30 orders):\n{', '.join(map(str,d30))}\n\n"
-            f"Grid (10):\n{', '.join(map(str,grid10))}\n"
+            f"📊 <b>{coin}</b>\n"
+            f"💵 Giá hiện tại: <b>{price:.6f} USDT</b>\n"
+            f"🛡️ Hỗ trợ gần nhất: {sup:.6f}\n\n"
+            f"⚙️ <b>Chiến lược DCA</b>\n"
+            f"├ 15 lệnh: {', '.join(f'{x:.6f}' for x in d15)}\n"
+            f"├ 20 lệnh: {', '.join(f'{x:.6f}' for x in d20)}\n"
+            f"└ 30 lệnh: {', '.join(f'{x:.6f}' for x in d30)}\n\n"
+            f"📐 <b>Chiến lược Grid (10)</b>\n"
+            f"{' | '.join(f'{x:.6f}' for x in grid10)}\n"
         )
-        await safe_send(context.bot,chat_id=chat_id, text=text)
+        await safe_send(context.bot, chat_id=chat_id, text=text, parse_mode="HTML")
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
     global last_sent
     utcnow = dt.datetime.now(dt.timezone.utc)
-
-
 # Khi gán last_sent cũng phải dùng aware datetime
     if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
         last_sent = utcnow

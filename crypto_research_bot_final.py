@@ -1256,45 +1256,45 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
 
 def suggest_dca_future(price: float, num_orders: int, support: Optional[float] = None, resistance: Optional[float] = None, direction: str = "long"):
     """
-    Suggest DCA levels for futures trading.
-    - price: Current price of the asset.
-    - num_orders: Number of safety orders.
-    - support: Support price level (optional).
-    - resistance: Resistance price level (optional).
-    - direction: Trading direction ("long" or "short").
-    Returns a dict with DCA configuration.
+    Gợi ý các mức DCA cho giao dịch futures.
+    - price: Giá hiện tại của tài sản.
+    - num_orders: Số lượng lệnh an toàn.
+    - support: Mức giá hỗ trợ (tùy chọn).
+    - resistance: Mức giá kháng cự (tùy chọn).
+    - direction: Hướng giao dịch ("long" hoặc "short").
+    Trả về dict chứa cấu hình DCA.
     """
     if not price or price <= 0:
         return {}
     if num_orders <= 0:
         return {}
 
-    leverage = 2  # Default leverage x2
-    tp_pct = 0.37  # Take-profit percentage
+    leverage = 2  # Đòn bẩy mặc định x2
+    tp_pct = 0.37  # Tỷ lệ chốt lời (%)
 
-    # Fallback support/resistance if not provided
+    # Fallback cho support/resistance nếu không được cung cấp hoặc không hợp lệ
     if direction == "long" and (support is None or support <= 0):
-        support = price * 0.95  # Assume 5% below price as fallback
+        support = price * 0.95  # Giả định hỗ trợ thấp hơn 5% giá hiện tại
     elif direction == "short" and (resistance is None or resistance <= 0):
-        resistance = price * 1.05  # Assume 5% above price as fallback
+        resistance = price * 1.05  # Giả định kháng cự cao hơn 5% giá hiện tại
 
-    # Calculate max drawdown percentage
+    # Tính tỷ lệ drawdown tối đa (%)
     max_dd_pct = 0.0
     if direction == "long" and support and support < price:
         max_dd_pct = ((price - support) / price) * 100.0
     elif direction == "short" and resistance and resistance > price:
         max_dd_pct = ((resistance - price) / price) * 100.0
     else:
-        max_dd_pct = 15.0  # Fallback drawdown assumption
+        max_dd_pct = 15.0  # Giả định drawdown mặc định nếu không có support/resistance
 
     avg_step_pct = max_dd_pct / num_orders if num_orders > 0 else 0.0
 
     steps = []
     for i in range(num_orders):
         if direction == "long":
-            entry_price = price * (1 - avg_step_pct / 100 * i)
+            entry_price = price * (1 - avg_step_pct / 100 * i)  # Giảm dần cho long
         else:  # direction == "short"
-            entry_price = price * (1 + avg_step_pct / 100 * i)
+            entry_price = price * (1 + avg_step_pct / 100 * i)  # Tăng dần cho short
         steps.append({
             "order": i + 1,
             "price": round(entry_price, 6),
@@ -1302,7 +1302,7 @@ def suggest_dca_future(price: float, num_orders: int, support: Optional[float] =
         })
 
     return {
-        "type": f"DCA Future ({num_orders} safety orders)",
+        "type": f"DCA Future ({num_orders} lệnh an toàn)",
         "price_now": round(price, 6),
         "tp_pct": tp_pct,
         "leverage": leverage,

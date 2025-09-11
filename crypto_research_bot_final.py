@@ -913,7 +913,7 @@ async def safe_send(bot, chat_id, text, **kwargs):
         text = "⚠️ Không có dữ liệu để hiển thị."
 
     if len(text) > MAX_LEN:
-        text = text[:MAX_LEN]  "\n... (cắt bớt)"
+        text = text[:MAX_LEN] + "\n... (cắt bớt)"
     try:
         # Escape toàn bộ text trước khi gửi (khi dùng HTML)
         if kwargs.get("parse_mode") == "HTML":

@@ -470,9 +470,7 @@ def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFram
     # đảo ngược để chronological (OKX trả mới → cũ)
     df = df.iloc[::-1].reset_index(drop=True)
 
-    return df
-
-		
+    return df	
 def detect_flow_signals(coin: str):
     """
     Return dict with:
@@ -2411,7 +2409,7 @@ def main():
     # Handlers
     application.add_handler(CommandHandler("start", start_handler))
     application.add_handler(CommandHandler("research", research_handler))
-	application.add_handler(CommandHandler("research_dca", research_dca_handler))
+    application.add_handler(CommandHandler("research_dca", research_dca_handler))
     application.add_handler(CommandHandler("deepcoin", deepcoin_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     application.add_handler(CallbackQueryHandler(callback_handler))

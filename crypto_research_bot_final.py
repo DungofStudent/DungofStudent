@@ -1885,28 +1885,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, symbol, mode = data.split(":")
         await research_handler(update, context, symbol=symbol, mode=mode)
 
-    elif data == "main":
+    if data == "main":
         user_id = update.effective_user.id
-        await safe_edit(
-            update.callback_query.message,
-            text="🏠 Menu",
-            reply_markup=main_menu(user_id)
-        )
+        await safe_edit(query.message, text="🏠 Menu", reply_markup=main_menu(user_id))
 
     elif data.startswith("topcoins:"):
         page = int(data.split(":")[1])
-        # sort by liquid first
-        liquid_sorted = sorted(COINS_LIST, key=lambda c: MARKET_MAP.get(c,{}).get("vol_quote_24h",0), reverse=True)
-        # rebuild page list
-        start = page*PAGE_SIZE
-        end = start+PAGE_SIZE
-        subset = liquid_sorted[start:end]
-        # temporarily override COINS_LIST view for page
-        text = "📊 Top Coins theo thanh khoản (24h):\n"
-        for c in subset:
-            v = MARKET_MAP.get(c,{}).get("vol_quote_24h",0)
-            text += f"- {c}: ~{v:,.0f} USDT\n"
-        await safe_edit(update.callback_query.message, text=text, reply_markup=coins_page_markup(page))
+        await safe_edit(query.message, text="🔥 Top Coins theo thanh khoản:", reply_markup=coins_page_markup(page))
 
     elif data.startswith("coin:"):
         coin = data.split(":")[1]
@@ -1987,22 +1972,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await research_handler(update, context, mode="short")
 
     elif data == "bot_dca_btn":
-        keyboard = [
-            [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
-            [InlineKeyboardButton("⬅️ Quay lại", callback_data="main")]
-        ]
-        await update.callback_query.message.edit_text(
-            "Chọn chế độ lọc Bot DCA:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-
+        await query.message.edit_text("Chọn chế độ lọc Bot DCA:", reply_markup=bot_dca_menu())
     elif data == "bot_dca_bull":
         await research_dca_bot(update, context, mode="bull")
     elif data == "bot_dca_bear":
         await research_dca_bot(update, context, mode="bear")
     elif data == "bot_dca_all":
         await research_dca_bot(update, context, mode="all")
-
 
     elif data.startswith("dca:"):
         coin = data.split(":")[1]
@@ -2401,35 +2377,10 @@ async def debug_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔥 Raw update: {update.to_dict()}")
 
 async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    try:
-        url = "https://www.okx.com/api/v5/market/tickers"
-        params = {"instType": "SPOT"}   # hoặc "SWAP" nếu muốn futures
-        r = requests.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        tickers = j.get("data", [])
-
-        # Sắp xếp theo volume USDT 24h (volCcy24h)
-        tickers = sorted(tickers, key=lambda x: float(x.get("volCcy24h", 0)), reverse=True)
-
-        top_list = tickers[:20]  # Lấy top 20 coin
-
-        lines = ["📊 <b>TOP COINS (OKX)</b>\n━━━━━━━━━━━━━━━━━━━━━"]
-        for t in top_list:
-            sym = t.get("instId", "")
-            last = t.get("last", "?")
-            vol = float(t.get("volCcy24h", 0))
-            pct = t.get("change24h", "?") if "change24h" in t else t.get("changePct", "?")
-
-            lines.append(f"<b>{sym}</b> | 💰 Giá: {last} | 💧Vol24h≈ {vol:,.0f} USDT | 📈 24h: {pct}")
-
-        reply = "\n".join(lines)
-        await safe_send(context.bot, chat_id=chat_id, text=reply, parse_mode="HTML")
-
-    except Exception as e:
-        logger.exception("top_coins_handler error")
-        await safe_send(context.bot, chat_id=chat_id, text="❌ Không lấy được Top Coins từ OKX.")
+"""Fetch top coins by liquidity (from OKX) and show UI with Home button."""
+    refresh_markets(limit=100)
+    text = "🔥 Top Coins theo thanh khoản 24h (OKX):"
+    await update.message.reply_text(text, reply_markup=coins_page_markup(0))
 
 
 # ================== MAIN ==================

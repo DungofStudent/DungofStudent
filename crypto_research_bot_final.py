@@ -1432,7 +1432,7 @@ def grid_levels(price: float, support: float = None, resistance: float = None, g
         low = price * 0.95
         high = price * 1.05
     levels = []
-    for i in range(grids  1):
+    for i in range(grids + 1):
         lvl = low + (i / grids) * (high - low)
         levels.append(round(lvl, 8))
     return levels
@@ -1491,7 +1491,7 @@ def suggest_grid_future(price: float, support: Optional[float] = None, resistanc
     step_pct = ((resistance - support) / support) / grids * 100
 
     levels = []
-    for i in range(grids  1):
+    for i in range(grids + 1):
         lvl = support  (i / grids) * (resistance - support)
         levels.append(round(lvl, 6))
 

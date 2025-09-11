@@ -1040,49 +1040,10 @@ def get_news_general(limit: int = 5):
         return fetch_news_coinstats(limit)
 
 
-def get_news_coin(coin: str, limit: int = 5):
-    sym = coin.upper().replace("-USDT", "").replace("-USD", "")
-    
-    # Thử CryptoPanic
-    try:
-        url = "https://cryptopanic.com/api/v1/posts/"
-        params = {"auth_token": CRYPTOPANIC_KEY, "currencies": sym}
-        r = requests.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("results", [])
-        out = []
-        for a in articles[:limit]:
-            title = a.get("title")
-            link = a.get("url")
-            if title and link:
-                out.append(f"- {title}\n🔗 {link}")
-        if out:
-            return out
-    except Exception as e:
-        logger.warning(f"CryptoPanic coin news error: {e}, dùng fallback CoinStats")
-    
-    # fallback CoinStats
-    try:
-        url = "https://api.coinstats.app/public/v1/news"
-        r = requests.get(url, params={"skip": 0, "limit": 20}, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("news", [])
-        out = []
-        for a in articles:
-            title = a.get("title", "")
-            link = a.get("link", "")
-            if sym and title and sym in title.upper():
-                out.append(f"- {title}\n🔗 {link}")
-        return out[:limit] if out else [f"Không có tin tức mới cho {sym}."]
-    except Exception as e:
-        logger.exception("CoinStats fallback error")
-        return [f"Không lấy được tin tức cho {coin}."]
-
 def get_news_today(limit: int = 10):
     """
-    Lấy tin tức thị trường trong ngày từ CoinStats
+    Lấy tin tức thị trường trong ngày từ CoinStats.
+    Fallback sang CryptoCompare nếu CoinStats lỗi.
     """
     try:
         url = "https://api.coinstats.app/public/v1/news"
@@ -1104,11 +1065,53 @@ def get_news_today(limit: int = 10):
                 break
         return out if out else ["Không có tin tức hôm nay."]
     except Exception as e:
-        logger.warning("CryptoPanic today news error → fallback CryptoCompare")
+        logger.warning(f"CoinStats today news error: {e} → fallback CryptoCompare")
         news = fetch_news_cryptocompare(limit)
-        if news:
-            return news
-        return fetch_news_coinstats(limit)
+        return news if news else ["Không có tin tức hôm nay."]
+
+
+def get_news_coin(coin: str, limit: int = 5):
+    """
+    Lấy tin tức liên quan đến một coin cụ thể.
+    Ưu tiên CryptoPanic → fallback CoinStats → fake demo.
+    """
+    sym = coin.upper().replace("-USDT", "").replace("-USD", "")
+    # Thử CryptoPanic
+    try:
+        url = "https://cryptopanic.com/api/v1/posts/"
+        params = {"auth_token": CRYPTOPANIC_KEY, "currencies": sym}
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        articles = j.get("results", [])
+        out = []
+        for a in articles[:limit]:
+            title = a.get("title")
+            link = a.get("url")
+            if title and link:
+                out.append(f"- {title}\n🔗 {link}")
+        if out:
+            return out
+    except Exception as e:
+        logger.warning(f"CryptoPanic coin news error: {e}, dùng fallback CoinStats")
+
+    # fallback CoinStats
+    try:
+        url = "https://api.coinstats.app/public/v1/news"
+        r = requests.get(url, params={"skip": 0, "limit": 20}, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        articles = j.get("news", [])
+        out = []
+        for a in articles:
+            title = a.get("title", "")
+            link = a.get("link", "")
+            if sym and title and sym in title.upper():
+                out.append(f"- {title}\n🔗 {link}")
+        return out[:limit] if out else [f"Không có tin tức mới cho {sym}."]
+    except Exception as e:
+        logger.exception("CoinStats fallback error")
+        return [f"Không lấy được tin tức cho {coin}."]
 		
 # ================== TECHNICALS ==================
 def _indicators(df: pd.DataFrame):
@@ -1281,21 +1284,20 @@ def ai_analysis(coin: str, tf_details: dict, vol_quote_24h: float, mode: str):
     return "\n".join(lines)
 
 def ai_news_analysis(coin: str, news_list: list) -> str:
-
+    """
+    Phân tích AI tin tức (dùng AI model nếu có, nếu lỗi thì fallback text gọn).
+    """
     if not news_list:
         return "🧠 Không có tin tức để AI phân tích."
-    
-    # Ví dụ đơn giản: kết hợp các tin thành prompt
-    prompt = f"Phân tích các tin tức gần đây về {coin}:\n"  "\n".join(news_list)
-    
-    # Gọi hàm AI của bạn (giả sử ai_text = ai_summarize(prompt))
+
+    prompt = f"Phân tích các tin tức gần đây về {coin}:\n" + "\n".join(news_list)
     try:
-        ai_text = ai_summarize(prompt)  # đây là hàm AI của bạn
+        ai_text = ai_summarize(prompt)  # gọi model AI của bạn
         return f"🧠 Phân tích AI từ tin tức:\n{ai_text}"
     except Exception as e:
         logger.exception(f"AI news analysis error: {e}")
-        return "🧠 Lỗi khi phân tích tin tức bằng AI."
-
+        # fallback demo
+        return f"📊 {coin}: Có {len(news_list)} tin tức. " + " | ".join(news_list[:3])
 
 # ================== UI (Telegram) ==================
 def main_menu(user_id: int) -> InlineKeyboardMarkup:

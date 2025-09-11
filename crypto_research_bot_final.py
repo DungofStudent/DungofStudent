@@ -2376,7 +2376,7 @@ async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         ai_news_text = ai_news_analysis(coin, news_list)
 
-        final_text = news_text  "\n\n"  ai_news_text  "\n\n"  tech_text  "\n\n"  ai_text
+        final_text = news_text + "\n\n" + ai_news_text + "\n\n" + tech_text + "\n\n" + ai_text
         await waiting_msg.edit_text(final_text)
     except Exception as e:
         logger.exception(f"deepcoin_handler error: {e}")

@@ -1411,7 +1411,7 @@ def dca_levels(price: float, num_orders: int = 15, total_range_pct: float = 0.15
         return []
     bottom = price * (1 - total_range_pct)
     steps = []
-    for i in range(1, num_orders  1):
+    for i in range(1, num_orders + 1):
         level = price - (i / num_orders) * (price - bottom)
         steps.append(round(level, 8))
     return steps

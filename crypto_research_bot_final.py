@@ -1,5 +1,4 @@
-
-# crypto_research_bot_optimized.py
+# crypto_research_bot_final.py
 # Telegram Crypto Research Bot (OKX-focused) — Liquidity-first, Multi-timeframe Trend Scanner, Smarter AI notes
 # - Prioritizes high-liquidity symbols using OKX tickers (volCcy24h)
 # - Confirms clear trends using multi-timeframe signals (15m/1H/4H/1D)
@@ -69,7 +68,7 @@ def ai_summarize(prompt: str) -> str:
     try:
         client = Groq(api_key=api_key)
         resp = client.chat.completions.create(
-            model="llama-3.1-8b-instruct",   # dùng model hợp lệ
+            model="llama3-8b-8192",  # SỬA: Thay model sai bằng model hợp lệ của Groq (llama3-8b-8192 thay vì llama-3.1-8b-instruct)
             messages=[
                 {
                     "role": "system",
@@ -994,6 +993,10 @@ def get_news_general(limit: int = 5):
         url = "https://cryptopanic.com/api/v1/posts/"
         params = {"auth_token": CRYPTOPANIC_KEY, "filter": "hot"}
         r = requests.get(url, params=params, timeout=15)
+        if r.status_code == 429:  # SỬA: Xử lý 429 bằng retry sau 5s
+            logger.warning("CryptoPanic 429 - Retry sau 5s")
+            time.sleep(5)
+            r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         j = r.json()
 
@@ -1037,13 +1040,63 @@ def get_news_general(limit: int = 5):
         news = fetch_news_cryptocompare(limit)
         if news:
             return news
-        return fetch_news_coinstats(limit)
+    # SỬA: Nếu vẫn không có, trả thông báo thân thiện
+    return ["Không tìm thấy tin tức mới gần đây. Hãy thử lại sau!"]
 
+
+def get_news_coin(coin: str, limit: int = 5):
+    sym = coin.upper().replace("-USDT", "").replace("-USD", "")
+    
+    # Thử CryptoPanic
+    try:
+        url = "https://cryptopanic.com/api/v1/posts/"
+        params = {"auth_token": CRYPTOPANIC_KEY, "currencies": sym}
+        r = requests.get(url, params=params, timeout=15)
+        if r.status_code == 429:  # SỬA: Xử lý 429 bằng retry sau 5s
+            logger.warning(f"CryptoPanic 429 cho {sym} - Retry sau 5s")
+            time.sleep(5)
+            r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        articles = j.get("results", [])
+        out = []
+        for a in articles[:limit]:
+            title = a.get("title")
+            link = a.get("url")
+            if title and link:
+                out.append(f"- {title}\n🔗 {link}")
+        if out:
+            return out
+    except Exception as e:
+        logger.warning(f"CryptoPanic coin news error: {e}, dùng fallback CoinStats")
+    
+    # fallback CoinStats
+    try:
+        url = "https://api.coinstats.app/public/v1/news"
+        r = requests.get(url, params={"skip": 0, "limit": 20}, timeout=15)
+        r.raise_for_status()
+        j = r.json()
+        articles = j.get("news", [])
+        out = []
+        for a in articles:
+            title = a.get("title", "")
+            link = a.get("link", "")
+            if sym and title and sym in title.upper():
+                out.append(f"- {title}\n🔗 {link}")
+        if out:
+            return out[:limit]
+        # SỬA: Nếu CoinStats không có, fallback thêm CryptoCompare với filter coin
+        else:
+            logger.warning(f"CoinStats không có tin cho {sym} → fallback CryptoCompare")
+            return fetch_news_cryptocompare(limit)  # CryptoCompare không filter coin, nhưng dùng làm fallback cuối
+    except Exception as e:
+        logger.exception("CoinStats fallback error")
+    # SỬA: Nếu vẫn không có, trả thông báo thân thiện
+    return [f"Không tìm thấy tin tức mới cho {sym}. Hãy thử lại sau!"]
 
 def get_news_today(limit: int = 10):
     """
-    Lấy tin tức thị trường trong ngày từ CoinStats.
-    Fallback sang CryptoCompare nếu CoinStats lỗi.
+    Lấy tin tức thị trường trong ngày từ CoinStats
     """
     try:
         url = "https://api.coinstats.app/public/v1/news"
@@ -1063,56 +1116,17 @@ def get_news_today(limit: int = 10):
                     out.append(f"- {title}\n🔗 {link}")
             if len(out) >= limit:
                 break
-        return out if out else ["Không có tin tức hôm nay."]
-    except Exception as e:
-        logger.warning(f"CoinStats today news error: {e} → fallback CryptoCompare")
-        news = fetch_news_cryptocompare(limit)
-        return news if news else ["Không có tin tức hôm nay."]
-
-
-def get_news_coin(coin: str, limit: int = 5):
-    """
-    Lấy tin tức liên quan đến một coin cụ thể.
-    Ưu tiên CryptoPanic → fallback CoinStats → fake demo.
-    """
-    sym = coin.upper().replace("-USDT", "").replace("-USD", "")
-    # Thử CryptoPanic
-    try:
-        url = "https://cryptopanic.com/api/v1/posts/"
-        params = {"auth_token": CRYPTOPANIC_KEY, "currencies": sym}
-        r = requests.get(url, params=params, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("results", [])
-        out = []
-        for a in articles[:limit]:
-            title = a.get("title")
-            link = a.get("url")
-            if title and link:
-                out.append(f"- {title}\n🔗 {link}")
         if out:
             return out
     except Exception as e:
-        logger.warning(f"CryptoPanic coin news error: {e}, dùng fallback CoinStats")
+        logger.warning("CoinStats today news error → fallback CryptoCompare")
+        news = fetch_news_cryptocompare(limit)
+        if news:
+            return news
+    # SỬA: Nếu không có tin hôm nay, fallback lấy tin "hot" gần nhất từ general
+    logger.warning("Không có tin hôm nay → fallback tin hot gần nhất")
+    return get_news_general(limit) or ["Không có tin tức hôm nay, đây là tin hot gần nhất."]
 
-    # fallback CoinStats
-    try:
-        url = "https://api.coinstats.app/public/v1/news"
-        r = requests.get(url, params={"skip": 0, "limit": 20}, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("news", [])
-        out = []
-        for a in articles:
-            title = a.get("title", "")
-            link = a.get("link", "")
-            if sym and title and sym in title.upper():
-                out.append(f"- {title}\n🔗 {link}")
-        return out[:limit] if out else [f"Không có tin tức mới cho {sym}."]
-    except Exception as e:
-        logger.exception("CoinStats fallback error")
-        return [f"Không lấy được tin tức cho {coin}."]
-		
 # ================== TECHNICALS ==================
 def _indicators(df: pd.DataFrame):
     if df.empty or len(df) < 50:
@@ -1188,259 +1202,7 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
     score = 0.0
     # EMA alignment
     if inds.get("ema12") is not None and inds.get("ema26") is not None:
-        if mode == "long" and inds["ema12"] > inds["ema26"]:
-            score = 25
-        if mode == "short" and inds["ema12"] < inds["ema26"]:
-            score = 25
-    # slopes
-    if mode == "long" and slope12 > 0 and slope26 > 0:
-        score = 20
-    if mode == "short" and slope12 < 0 and slope26 < 0:
-        score = 20
-    # MACD
-    macd = inds.get("macd"); sig = inds.get("macd_signal"); hist = inds.get("macd_hist")
-    if macd is not None and sig is not None and hist is not None:
-        if mode == "long" and macd > sig and hist > 0:
-            score = 25
-        if mode == "short" and macd < sig and hist < 0:
-            score = 25
-    # RSI
-    rsi = inds.get("rsi")
-    if rsi is not None:
-        if mode == "long" and 50 <= rsi <= 70:
-            score = 15
-        if mode == "short" and 30 <= rsi <= 50:
-            score = 15
-    # ADX
-    adx = inds.get("adx")
-    if adx is not None and adx >= 20:
-        score = 15
-
-    score = max(0.0, min(100.0, score))
-    return score, inds
-
-def multi_tf_score(coin: str, bars=("15m","1H","4H","1D"), mode="long"):
-    """
-    Compute average score across multiple timeframes. Require alignment (all > threshold).
-    Returns (avg_score, details) where details has per-tf score and indicators.
-    """
-    details = {}
-    scores = []
-    for b in bars:
-        df = get_ohlc_okx(coin, b, limit=200 if b != "1D" else 400)
-        s, inds = compute_trend_score(df, mode=mode)
-        details[b] = {"score": s, "inds": inds}
-        scores.append(s if s is not None else 0.0)
-    avg = sum(scores)/len(scores) if scores else 0.0
-    return avg, details
-
-# ================== CHART ==================
-def create_price_chart(df, coin, title_suffix="(OKX)"):
-    buf = BytesIO()
-    if df.empty:
-        return buf
-    plt.figure(figsize=(8,4))
-    plt.plot(df["ts"], df["close"], label=f"{coin} close")
-    plt.title(f"{coin} Price {title_suffix}")
-    plt.xlabel("Date")
-    plt.ylabel("Price")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(buf, format="png")
-    buf.seek(0)
-    plt.close()
-    return buf
-
-# ================== AI TEXT ==================
-def ai_analysis(coin: str, tf_details: dict, vol_quote_24h: float, mode: str):
-    """
-    Build a friendly Vietnamese analysis string from indicators and trend scores.
-    """
-    lines = [f"🤖 Nhận định AI cho {coin} ({mode.upper()}):"]
-    try:
-        s15 = tf_details.get("15m",{}).get("score",0)
-        s1h = tf_details.get("1H",{}).get("score",0)
-        s4h = tf_details.get("4H",{}).get("score",0)
-        s1d = tf_details.get("1D",{}).get("score",0)
-        lines.append(f"- Điểm xu hướng: 15m={s15:.0f} | 1H={s1h:.0f} | 4H={s4h:.0f} | 1D={s1d:.0f}")
-        lines.append(f"- Thanh khoản 24h ước tính: ~{vol_quote_24h:,.0f} USDT")
-        key_tf = "1H"
-        inds = tf_details.get(key_tf,{}).get("inds",{})
-        rsi = inds.get("rsi"); adx = inds.get("adx"); ema12 = inds.get("ema12"); ema26 = inds.get("ema26")
-        macd = inds.get("macd"); sig = inds.get("macd_signal")
-        if rsi is not None:
-            if rsi > 70: lines.append(f"- RSI(1H) {rsi:.1f} → có dấu hiệu quá mua, cẩn trọng chốt lời.")
-            elif rsi < 30: lines.append(f"- RSI(1H) {rsi:.1f} → quá bán, dễ có hồi kỹ thuật.")
-            else: lines.append(f"- RSI(1H) {rsi:.1f} → vùng trung tính/hỗ trợ xu hướng hiện tại.")
-        if adx is not None:
-            lines.append(f"- ADX(1H) {adx:.1f} → {'xu hướng mạnh' if adx>=20 else 'xu hướng yếu/chưa rõ'}.")
-        if macd is not None and sig is not None:
-            lines.append(f"- MACD(1H) {'>' if macd>sig else '<'} Signal → {'đồng thuận' if (mode=='long' and macd>sig) or (mode=='short' and macd<sig) else 'chưa đồng thuận'}.")
-        if ema12 is not None and ema26 is not None:
-            lines.append(f"- EMA12 {'>' if ema12>ema26 else '<'} EMA26 → {'thuận xu hướng' if (mode=='long' and ema12>ema26) or (mode=='short' and ema12<ema26) else 'ngược xu hướng'}.")
-        lines.append("⚠️ Đây không phải lời khuyên đầu tư. Hãy đặt dừng lỗ và quản trị rủi ro.")
-    except Exception:
-        lines.append("Không đủ dữ liệu để phân tích chi tiết.")
-    return "\n".join(lines)
-
-def ai_news_analysis(coin: str, news_list: list) -> str:
-    """
-    Phân tích AI tin tức (dùng AI model nếu có, nếu lỗi thì fallback text gọn).
-    """
-    if not news_list:
-        return "🧠 Không có tin tức để AI phân tích."
-
-    prompt = f"Phân tích các tin tức gần đây về {coin}:\n" + "\n".join(news_list)
-    try:
-        ai_text = ai_summarize(prompt)  # gọi model AI của bạn
-        return f"🧠 Phân tích AI từ tin tức:\n{ai_text}"
-    except Exception as e:
-        logger.exception(f"AI news analysis error: {e}")
-        # fallback demo
-        return f"📊 {coin}: Có {len(news_list)} tin tức. " + " | ".join(news_list[:3])
-
-# ================== UI (Telegram) ==================
-def main_menu(user_id: int) -> InlineKeyboardMarkup:
-    state = "ON ✅" if alerts.get(user_id, False) else "OFF ❌"
-    keyboard = [
-        [InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0")],
-        [InlineKeyboardButton("🔍 Research (Scanner)", callback_data="research_btn")],
-        [InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_btn")],
-        [InlineKeyboardButton("📰 Tin tức thị trường", callback_data="news_market_menu")],
-        [InlineKeyboardButton(f"⚡ Toggle Alerts: {state}", callback_data="toggle_alert")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def research_choice_markup():
-    keyboard = [
-        [InlineKeyboardButton("📈 Long (Xu hướng tăng)", callback_data="research_long")],
-        [InlineKeyboardButton("📉 Short (Xu hướng giảm)", callback_data="research_short")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def coins_page_markup(page: int):
-    start = page * PAGE_SIZE
-    end = start + PAGE_SIZE
-    liquid_sorted = sorted(
-        COINS_LIST, key=lambda c: MARKET_MAP.get(c, {}).get("vol_quote_24h", 0), reverse=True
-    )
-    items = liquid_sorted[start:end]
-    keyboard = [[InlineKeyboardButton(c, callback_data=f"coin:{c}")] for c in items]
-    # Navigation row
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"topcoins:{page-1}"))
-    if end < len(liquid_sorted):
-        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page+1}"))
-    if nav:
-        keyboard.append(nav)
-    # Home button
-    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main")])
-    return InlineKeyboardMarkup(keyboard)
-
-def bot_dca_menu():
-    # Simplified: only keep Bull option for Bot DCA (as requested)
-    keyboard = [
-        [InlineKeyboardButton("📈 Xu hướng Tăng (Bot DCA)", callback_data="bot_dca_bull")],
-        [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def coin_actions_markup(coin_id):
-    keyboard = [
-        [InlineKeyboardButton("📈 Chart (1D)", callback_data=f"chart:{coin_id}")],
-        [InlineKeyboardButton("📋 Indicators (1H)", callback_data=f"ind:{coin_id}")],
-        [InlineKeyboardButton("🤖 AI Research", callback_data=f"ai:{coin_id}")],
-        [InlineKeyboardButton("📰 Tin tức", callback_data=f"news_menu:{coin_id}")],
-        [InlineKeyboardButton("⬅️ Back", callback_data="back_coins")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-def news_menu_markup(coin_id):
-    keyboard = [
-        [InlineKeyboardButton("📰 Diễn biến thị trường", callback_data=f"news_market:{coin_id}")],
-        [InlineKeyboardButton("💡 Diễn biến coin", callback_data=f"news_coin:{coin_id}")],
-        [InlineKeyboardButton("⬅️ Back", callback_data=f"coin:{coin_id}")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-
-# ================== HELPERS ==================
-def percent_change_over_period(df: pd.DataFrame, lookback: int = 24):
-    if df.empty or len(df) <= lookback:
-        return None
-    current = float(df.iloc[-1]['close'])
-    prev = float(df.iloc[-1 - lookback]['close'])
-    if prev == 0:
-        return None
-    return ((current - prev) / prev) * 100.0
-
-def compute_support_resistance(df: pd.DataFrame, window: int = 50):
-    if df.empty:
-        return (None, None)
-    d = df.copy().reset_index(drop=True)
-    tail = d.iloc[-window:] if len(d) >= window else d
-    resistance = float(tail['high'].max())
-    strong_support = float(tail['low'].min())
-    return resistance, strong_support
-
-def suggest_entry(indicators: dict, price: float, support: float, resistance: float, mode="long"):
-    try:
-        ema12 = indicators.get("ema12")
-        ema26 = indicators.get("ema26")
-        if ema12 and ema26 and support and resistance:
-            if mode == "long" and ema12 > ema26:
-                return round(max(support, price*0.995), 8)
-            if mode == "short" and ema12 < ema26:
-                return round(min(resistance, price*1.005), 8)
-    except Exception:
-        pass
-    return round(price, 8)
-
-def dca_levels(price: float, num_orders: int = 15, total_range_pct: float = 0.15):
-    """
-    Suggest DCA levels: linear steps from current price down to price*(1 - total_range_pct).
-    Returns list of floats (levels) length = num_orders ordered from nearest to farthest (descending).
-    """
-    if price is None or price <= 0:
-        return []
-    bottom = price * (1 - total_range_pct)
-    steps = []
-    for i in range(1, num_orders + 1):
-        level = price - (i / num_orders) * (price - bottom)
-        steps.append(round(level, 8))
-    return steps
-
-def grid_levels(price: float, support: float = None, resistance: float = None, grids: int = 10):
-    """
-    Suggest grid levels for futures grid bot.
-    If support/resistance provided, generate grids between them; otherwise use /-5% around price.
-    Returns list of grid prices (ascending).
-    """
-    if price is None or price <= 0:
-        return []
-    if support and resistance and resistance > support:
-        low = support
-        high = resistance
-    else:
-        # default 5% each side
-        low = price * 0.95
-        high = price * 1.05
-    levels = []
-    for i in range(grids + 1):
-        lvl = low + (i / grids) * (high - low)
-        levels.append(round(lvl, 8))
-    return levels
-
-# ================== BOT DCA & GRID FUTURE SUGGESTIONS ==================
-from typing import Optional
-
-def suggest_dca_future(price: float, num_orders: int, support: Optional[float] = None,
-                       resistance: Optional[float] = None, direction: str = "long"):
-    ...
-    if not price or price <= 0:
+        if mode == "long" and ...(truncated 10737 characters)...rice <= 0:
         return {}
 
     leverage = 2   # mặc định x2

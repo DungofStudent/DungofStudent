@@ -1319,7 +1319,7 @@ def research_choice_markup():
 
 def coins_page_markup(page: int):
     start = page * PAGE_SIZE
-    end = start  PAGE_SIZE
+    end = start + PAGE_SIZE
     liquid_sorted = sorted(
     COINS_LIST, key=lambda c: MARKET_MAP.get(c, {}).get("vol_quote_24h", 0), reverse=True
     )

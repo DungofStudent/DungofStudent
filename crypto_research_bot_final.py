@@ -1554,12 +1554,12 @@ async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # produce text compact
             line = (
                 f"<b>{coin}</b> | Score(avg): <b>{avg_score}</b>\n"
-                f"15m/1H/4H/1D: <code>{int(s15)}/{int(s1h)}/{int(s4h)}/{int(s1d)}</code>\n"
-                f"Price: <code>{price:.8f}</code> | 1DΔ: <code>{pct_24h:.2f}%</code>\n"
-                f"Support(D1): <code>{sup_d1}</code> | Resistance(D1): <code>{res_d1}</code>\n"
+                f"15m/1H/4H/1D:  {int(s15)}/{int(s1h)}/{int(s4h)}/{int(s1d)} \n"
+                f"Price:  {price:.8f}  | 1DΔ:  {pct_24h:.2f}% \n"
+                f"Support(D1):  {sup_d1}  | Resistance(D1):  {res_d1} \n"
                 f"🤖 DCA Future (TP={cfg15['tp_pct']}%, Lev=x{cfg15['leverage']}):\n"
                 f" • Base step%: {cfg15['base_step_pct']}% | Money×: {cfg15['money_multiplier']} | Step×: {cfg15['step_multiplier']}\n"
-                f" • MaxDrawdownNeeded ≈ <code>{cfg15['max_drawdown_pct']}%</code>\n"
+                f" • MaxDrawdownNeeded ≈  {cfg15['max_drawdown_pct']}% \n"
                 f" • 15 orders sample: {', '.join(map(lambda x: str(x['price']), cfg15['steps'][:5]))}...\n"
                 f" • 20 orders sample: {', '.join(map(lambda x: str(x['price']), cfg20['steps'][:5]))}...\n"
                 f" • 30 orders sample: {', '.join(map(lambda x: str(x['price']), cfg30['steps'][:5]))}...\n"
@@ -1616,9 +1616,9 @@ async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, m
 
             text = (
                 f"🔎 <b>{coin}</b>\n"
-                f"Giá hiện tại: <code>{price:.4f}</code>\n"
-                f"Support gần nhất: <code>{sup:.4f}</code>\n"
-                f"Max Drawdown: <code>{max_dd_pct:.2f}%</code>\n"
+                f"Giá hiện tại:  {price:.4f} \n"
+                f"Support gần nhất:  {sup:.4f} \n"
+                f"Max Drawdown:  {max_dd_pct:.2f}% \n"
                 f"Trend Score: <b>{trend_score}</b> ({trend_type})\n\n"
                 f"➡️ Bước giá gợi ý:\n"
                 f"- 15 lệnh: {step15}% | Ký quỹ ≈ {kq15}\n"
@@ -2143,11 +2143,11 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
     for r in results:
                 lines.append(
             f"\n<b>{r['coin']}</b> | Score(avg): <b>{r['avg_score']}</b>\n"
-            f"🧭 15m/1H/4H/1D: <code>{r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']}</code>\n"
-            f"💧 Vol24h≈ <code>{r['volq']:,.0f} USDT</code>\n"
-            f"💰 Giá: <code>{r['price']}</code> | 24h: <code>{r['pct_24h']}%</code>\n"
+            f"🧭 15m/1H/4H/1D:  {r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']} \n"
+            f"💧 Vol24h≈  {r['volq']:,.0f} USDT \n"
+            f"💰 Giá:  {r['price']}  | 24h:  {r['pct_24h']}% \n"
             f"🎯 Entry gợi ý: {r['entry']}\n"
-            f"🛑 Kháng cự: <code>{r['resistance']}</code> | 🛡️ Hỗ trợ: <code>{r['support']}</code>\n"
+            f"🛑 Kháng cự:  {r['resistance']}  | 🛡️ Hỗ trợ:  {r['support']} \n"
         )
     reply = "\n".join(lines)
 
@@ -2209,11 +2209,11 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         entry = suggest_entry(details.get("1H",{}).get("inds",{}), price, sup, res, mode="long")
         text_out = (
             f"📊 <b>{coin}</b>\n"
-            f"💰 Giá hiện tại: <code>{round(price, 8)}</code>\n"
-            f"🧭 Score(15m/1H/4H/1D): <code>{details['15m']['score']:.0f}/{details['1H']['score']:.0f}/{details['4H']['score']:.0f}/{details['1D']['score']:.0f}</code>\n"
-            f"🎯 Entry gợi ý: <code>{entry}</code>\n"
-            f"🛑 Resistance: <code>{round(res, 8) if res else 'N/A'}</code>\n"
-            f"🛡️ Support: <code>{round(sup, 8) if sup else 'N/A'}</code>\n"
+            f"💰 Giá hiện tại:  {round(price, 8)} \n"
+            f"🧭 Score(15m/1H/4H/1D):  {details['15m']['score']:.0f}/{details['1H']['score']:.0f}/{details['4H']['score']:.0f}/{details['1D']['score']:.0f} \n"
+            f"🎯 Entry gợi ý:  {entry} \n"
+            f"🛑 Resistance:  {round(res, 8) if res else 'N/A'} \n"
+            f"🛡️ Support:  {round(sup, 8) if sup else 'N/A'} \n"
         )
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         ai_text = ai_analysis(coin, details, volq, "long")

@@ -1318,16 +1318,38 @@ def research_choice_markup():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def coins_page_markup(page:int):
+def coins_page_markup(page: int):
     start = page * PAGE_SIZE
     end = start + PAGE_SIZE
-    items = COINS_LIST[start:end]
+    liquid_sorted = sorted(
+    COINS_LIST, key=lambda c: MARKET_MAP.get(c, {}).get("vol_quote_24h", 0), reverse=True
+    )
+    items = liquid_sorted[start:end]
+
+
     keyboard = [[InlineKeyboardButton(c, callback_data=f"coin:{c}")] for c in items]
+
+
     nav = []
-    if page > 0: nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"topcoins:{page-1}"))
-    if end < len(COINS_LIST): nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page+1}"))
-    if nav: keyboard.append(nav)
-    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"topcoins:{page-1}"))
+    if end < len(COINS_LIST):
+        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page+1}"))
+    if nav:
+        keyboard.append(nav)
+
+
+    # Add Home button
+    keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main")])
+    return InlineKeyboardMarkup(keyboard)
+
+def bot_dca_menu():
+    keyboard = [
+        [InlineKeyboardButton("📈 Xu hướng Tăng", callback_data="bot_dca_bull")],
+        [InlineKeyboardButton("📉 Xu hướng Giảm", callback_data="bot_dca_bear")],
+        [InlineKeyboardButton("📊 Tất cả Coin", callback_data="bot_dca_all")],
+        [InlineKeyboardButton("🏠 Main Menu", callback_data="main")]
+    ]
     return InlineKeyboardMarkup(keyboard)
 
 def coin_actions_markup(coin_id):

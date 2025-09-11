@@ -2409,7 +2409,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         news_list = get_news_coin(coin)
         news_text = "📰 Tin tức liên quan:\n"  "\n\n".join(news_list)
         ai_news_text = ai_news_analysis(coin, news_list)
-        final_text = text_out  "\n\n"  news_text  "\n\n"  ai_news_text  "\n\n"  ai_text
+        final_text = text_out + "\n\n"  news_text + "\n\n"  ai_news_text + "\n\n"  ai_text
         if waiting_msg:
             await waiting_msg.edit_text(final_text, parse_mode=None)
         else:

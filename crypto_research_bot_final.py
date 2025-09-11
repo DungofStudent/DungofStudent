@@ -260,9 +260,8 @@ def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
     delta = df["close"].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = -delta.where(delta < 0, 0).rolling(14).mean()
-    rs = gain / (loss  1e-9)
-    df["rsi"] = 100 - (100 / (1  rs))
-
+    rs = gain / (loss + 1e-9)
+    df["rsi"] = 100 - (100 / (1 + rs))
     last = df.iloc[-1]
     score = 0
 
@@ -320,7 +319,7 @@ def check_liquidity_strength(df):
         spread = (high - low) / low if low > 0 else 0
 
         # Điều kiện pump thật
-        if volume > 2 * avg_vol and spread > 0.01 and close > (open_  (high - open_) * 0.5):
+        if volume > 2 * avg_vol and spread > 0.01 and close > (open_ + (high - open_) * 0.5):
             return True, f"✅ Pump thật: Volume tăng mạnh ({volume:.2f}), spread {spread:.2%}"
 
         # Điều kiện pump giả (volume tăng nhưng spread nhỏ)
@@ -683,11 +682,11 @@ def okx_get_json_signed(endpoint: str, params=None, method: str = "GET", timeout
     body = ""
 
     if method.upper() == "GET" and params:
-        query = "?"  urlencode(params)
+        query = "?" + urlencode(params)
     elif method.upper() in ("POST", "PUT") and params is not None:
         body = json.dumps(params, separators=(",", ":"), ensure_ascii=False)
 
-    url = base_url  path  query
+    url = base_url + path + query
     proxies = {"http": PROXY, "https": PROXY} if globals().get("PROXY") else None
 
     for attempt in range(retries):
@@ -1434,7 +1433,7 @@ def grid_levels(price: float, support: float = None, resistance: float = None, g
         high = price * 1.05
     levels = []
     for i in range(grids  1):
-        lvl = low  (i / grids) * (high - low)
+        lvl = low + (i / grids) * (high - low)
         levels.append(round(lvl, 8))
     return levels
 

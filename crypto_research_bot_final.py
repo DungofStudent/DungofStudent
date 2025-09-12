@@ -1857,9 +1857,18 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Received /start from user {update.effective_user.id}")
     refresh_markets(MAX_SCAN)
     user_id = update.effective_user.id
+
+    # ReplyKeyboard (cố định dưới chat)
+    keyboard = [
+        ["🔍 Research", "🤖 Bot DCA"],
+        ["📊 Top Coins", "📰 Tin tức"],
+        ["❌ Alerts"]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
     await update.message.reply_text(
         "👋 Crypto Research Bot (OKX • Liquidity & Trend)",
-        reply_markup=main_menu(user_id)
+        reply_markup=reply_markup
     )
 
 

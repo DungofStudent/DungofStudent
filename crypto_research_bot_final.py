@@ -1106,168 +1106,77 @@ async def okx_public_request(path: str, params: dict | None = None):
 
 
 # ================== NEWS API ==================
-LAST_NEWS_CACHE = []
 LAST_NEWS_FETCH = None
 NEWS_CACHE_TTL = dt.timedelta(minutes=35) 
+NEWS_BUFFER = []   # hàng đợi tin còn lại chưa gửi
+LAST_NEWS_IDS = set()  # để tránh gửi trùng
 
-def fetch_news_cryptocompare(limit=5):
-    """Fallback CryptoCompare News API"""
-    try:
-        url = "https://min-api.cryptocompare.com/data/v2/news/?lang=EN"
-        r = requests.get(url, headers=DEFAULT_HEADERS, timeout=10)
-        r.raise_for_status()
-        data = r.json().get("Data", [])
-        return [f"{n['title']} ({n['url']})" for n in data[:limit]]
-    except Exception as e:
-        logger.warning(f"⚠️ CryptoCompare error: {e}")
-        return []
+def fetch_all_news(limit=50):
+    """Lấy nhiều nguồn tin, hợp nhất, bỏ trùng"""
+    news_items = []
 
-def get_news_general(limit: int = 5):
-    global LAST_NEWS_CACHE, LAST_NEWS_FETCH
-    now = dt.datetime.now()
-
-    # Nếu cache còn hạn thì trả về cache
-    if LAST_NEWS_FETCH and (now - LAST_NEWS_FETCH) < NEWS_CACHE_TTL:
-        return LAST_NEWS_CACHE[:limit]
-
-    # Thử lấy từ CryptoPanic trước
+    # 1. CryptoPanic
     try:
         url = "https://cryptopanic.com/api/v1/posts/"
         params = {"auth_token": CRYPTOPANIC_KEY, "filter": "hot"}
         r = requests.get(url, params=params, timeout=15)
-        if r.status_code == 429:  # SỬA: Xử lý 429 bằng retry sau 5s
+        if r.status_code == 429:
             logger.warning("CryptoPanic 429 - Retry sau 5s")
             time.sleep(5)
             r = requests.get(url, params=params, timeout=15)
         r.raise_for_status()
         j = r.json()
-
-        # Nếu trả về quota limit thì bỏ qua và fallback
-        if "error" in j or "message" in j and "limit" in j["message"].lower():
-            raise RuntimeError("CryptoPanic quota exceeded")
-
-        articles = j.get("results", [])
-        out = []
-        for a in articles[:limit]:
-            title = a.get("title")
-            link = a.get("url")
+        for a in j.get("results", []):
+            title, link = a.get("title"), a.get("url")
             if title and link:
-                out.append(f"- {title}\n🔗 {link}")
-        if out:
-            LAST_NEWS_CACHE = out
-            LAST_NEWS_FETCH = now
-            return out
-    except Exception:
-        logger.warning("CryptoPanic lỗi/quota full → fallback CoinStats")
-
-    # fallback CoinStats
-    try:
-        url = "https://api.coinstats.app/public/v1/news"
-        r = requests.get(url, params={"skip": 0, "limit": limit}, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("news", [])
-        out = []
-        for a in articles:
-            title = a.get("title", "")
-            link = a.get("link", "")
-            if title:
-                out.append(f"- {title}\n🔗 {link}")
-        if out:
-            LAST_NEWS_CACHE = out
-            LAST_NEWS_FETCH = now
-            return out[:limit]
+                news_items.append((title, link))
     except Exception as e:
-        logger.warning("CryptoPanic lỗi/quota full → fallback CryptoCompare")
-        news = fetch_news_cryptocompare(limit)
-        if news:
-            return news
-    # SỬA: Nếu vẫn không có, trả thông báo thân thiện
-    return ["Không tìm thấy tin tức mới gần đây. Hãy thử lại sau!"]
+        logger.warning(f"⚠️ CryptoPanic error: {e}")
 
+    # 2. CoinStats
+    try:
+        r = requests.get("https://api.coinstats.app/public/v1/news", params={"skip": 0, "limit": limit}, timeout=15)
+        j = r.json()
+        for a in j.get("news", []):
+            news_items.append((a.get("title"), a.get("link")))
+    except Exception as e:
+        logger.warning(f"⚠️ CoinStats error: {e}")
 
-def get_news_coin(coin: str, limit: int = 5):
-    sym = coin.upper().replace("-USDT", "").replace("-USD", "")
-    
-    # Thử CryptoPanic
+    # 3. CryptoCompare
     try:
-        url = "https://cryptopanic.com/api/v1/posts/"
-        params = {"auth_token": CRYPTOPANIC_KEY, "currencies": sym}
-        r = requests.get(url, params=params, timeout=15)
-        if r.status_code == 429:  # SỬA: Xử lý 429 bằng retry sau 5s
-            logger.warning(f"CryptoPanic 429 cho {sym} - Retry sau 5s")
-            time.sleep(5)
-            r = requests.get(url, params=params, timeout=15)
-        r.raise_for_status()
+        r = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN", timeout=15)
         j = r.json()
-        articles = j.get("results", [])
-        out = []
-        for a in articles[:limit]:
-            title = a.get("title")
-            link = a.get("url")
-            if title and link:
-                out.append(f"- {title}\n🔗 {link}")
-        if out:
-            return out
+        for a in j.get("Data", []):
+            news_items.append((a.get("title"), a.get("url")))
     except Exception as e:
-        logger.warning(f"CryptoPanic coin news error: {e}, dùng fallback CoinStats")
-    
-    # fallback CoinStats
-    try:
-        url = "https://api.coinstats.app/public/v1/news"
-        r = requests.get(url, params={"skip": 0, "limit": 20}, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("news", [])
-        out = []
-        for a in articles:
-            title = a.get("title", "")
-            link = a.get("link", "")
-            if sym and title and sym in title.upper():
-                out.append(f"- {title}\n🔗 {link}")
-        if out:
-            return out[:limit]
-        # SỬA: Nếu CoinStats không có, fallback thêm CryptoCompare với filter coin
-        else:
-            logger.warning(f"CoinStats không có tin cho {sym} → fallback CryptoCompare")
-            return fetch_news_cryptocompare(limit)  # CryptoCompare không filter coin, nhưng dùng làm fallback cuối
-    except Exception as e:
-        logger.exception("CoinStats fallback error")
-    # SỬA: Nếu vẫn không có, trả thông báo thân thiện
-    return [f"Không tìm thấy tin tức mới cho {sym}. Hãy thử lại sau!"]
+        logger.warning(f"⚠️ CryptoCompare error: {e}")
 
-def get_news_today(limit: int = 10):
-    """
-    Lấy tin tức thị trường trong ngày từ CoinStats
-    """
-    try:
-        url = "https://api.coinstats.app/public/v1/news"
-        r = requests.get(url, params={"skip": 0, "limit": 50}, timeout=15)
-        r.raise_for_status()
-        j = r.json()
-        articles = j.get("news", [])
-        today = dt.datetime.now(dt.UTC).date()
-        out = []
-        for a in articles:
-            title = a.get("title", "")
-            link = a.get("link", "")
-            pub_ts = a.get("publishedAt")  # timestamp UTC
-            if title and link and pub_ts:
-                pub_date = dt.datetime.fromtimestamp(pub_ts / 1000, tz=dt.UTC).date()
-                if pub_date == today:
-                    out.append(f"- {title}\n🔗 {link}")
-            if len(out) >= limit:
-                break
-        if out:
-            return out
-    except Exception as e:
-        logger.warning("CoinStats today news error → fallback CryptoCompare")
-        news = fetch_news_cryptocompare(limit)
-        if news:
-            return news
-    # SỬA: Nếu không có tin hôm nay, fallback lấy tin "hot" gần nhất từ general
-    logger.warning("Không có tin hôm nay → fallback tin hot gần nhất")
-    return get_news_general(limit) or ["Không có tin tức hôm nay, đây là tin hot gần nhất."]
+    # lọc trùng
+    clean_items = []
+    seen = set()
+    for title, link in news_items:
+        if not title or not link:
+            continue
+        nid = f"{title}|{link}"
+        if nid not in seen and nid not in LAST_NEWS_IDS:
+            seen.add(nid)
+            LAST_NEWS_IDS.add(nid)
+            clean_items.append(f"- {title}\n🔗 {link}")
+
+    return clean_items[:limit]
+
+def get_news_batch(batch_size=15):
+    """Lấy batch tin tức từ buffer, refill khi cần"""
+    global NEWS_BUFFER, LAST_NEWS_FETCH
+
+    if not NEWS_BUFFER:  # refill
+        NEWS_BUFFER = fetch_all_news(limit=50)
+
+    batch = NEWS_BUFFER[:batch_size]
+    NEWS_BUFFER = NEWS_BUFFER[batch_size:]
+
+    return batch, bool(NEWS_BUFFER)  # trả về batch và cờ còn tin chưa đọc
+
 
 # ================== TECHNICALS ==================
 def _indicators(df: pd.DataFrame):
@@ -2024,6 +1933,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "news_market_menu" or data.startswith("news_market"):
         await news_market_handler(update, context)
 
+    if data == "news_more":
+        batch, has_more = get_news_batch(15)
+        if not batch:
+            await query.answer("Hết tin rồi ✅")
+            return
+        text = "📰 Tin tức tiếp theo:\n\n" + "\n\n".join(batch)
+        buttons = []
+        if has_more:
+            buttons.append([InlineKeyboardButton("📩 Xem thêm tin tức", callback_data="news_more")])
+        await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True)
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
@@ -2500,6 +2419,20 @@ async def analyze_coin(update: Update, context: ContextTypes.DEFAULT_TYPE, symbo
     except Exception as e:
         logger.exception(f"analyze_coin error for {symbol}: {e}")
         return f"❌ Lỗi khi phân tích {symbol}"
+
+async def news_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    batch, has_more = get_news_batch(15)
+
+    if not batch:
+        await update.message.reply_text("❌ Không tìm thấy tin tức mới.")
+        return
+
+    text = "📰 Tin tức thị trường gần đây:\n\n" + "\n\n".join(batch)
+    buttons = []
+    if has_more:
+        buttons.append([InlineKeyboardButton("📩 Xem thêm tin tức", callback_data="news_more")])
+
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True)
 
 
 # ================== MAIN ==================

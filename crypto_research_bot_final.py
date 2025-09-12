@@ -308,22 +308,22 @@ def bot_dca_menu() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(buttons)
 # ================== Flask routes =====================
-@flask_app.route("/")
-def home():
-    return "✅ Bot is running with Flask  Polling!"
+#@flask_app.route("/")
+#def home():
+#    return "✅ Bot is running with Flask  Polling!"
 
-@flask_app.route(FLASK_WEBHOOK_PATH, methods=["GET", "POST", "HEAD"])
-def webhook():
-    if flask_request.method in ("GET", "HEAD"):
-        return "ok", 200
+#@flask_app.route(FLASK_WEBHOOK_PATH, methods=["GET", "POST", "HEAD"])
+#def webhook():
+ #   if flask_request.method in ("GET", "HEAD"):
+#        return "ok", 200
 
-    try:
-        update = Update.de_json(flask_request.get_json(force=True), application.bot)
-        application.update_queue.put_nowait(update)
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return "error", 500
-    return "ok", 200
+##    try:
+#        update = Update.de_json(flask_request.get_json(force=True), application.bot)
+#        application.update_queue.put_nowait(update)
+#    except Exception as e:
+##        logger.error(f"Webhook error: {e}")
+###        return "error", 500
+#    return "ok", 200
 
 # === Support/Resistance & scoring helpers (simplified) ===
 def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (Optional[float], Optional[float]):

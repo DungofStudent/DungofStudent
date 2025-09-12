@@ -573,8 +573,12 @@ def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFram
     endpoint = "/api/v5/market/candles"
     params = {"instId": inst_id, "bar": bar, "limit": limit}
 
-    # try public
-    j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params, headers={"User-Agent": "Mozilla/5.0"})
+    # thử public API trước
+    j = okx_get_json(
+        OKX_BASE.rstrip("/") + endpoint,
+        params=params,
+        headers={"User-Agent": "Mozilla/5.0"}
+    )
     data = j.get("data", []) if j else []
     if not data:
         logger.debug(f"Public candles empty for {inst_id} -> fallback signed")
@@ -582,21 +586,31 @@ def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFram
         data = j.get("data", []) if j else []
 
     if not data:
+        logger.warning(f"⚠️ Không có dữ liệu OHLC cho {inst_id} ({bar})")
         return pd.DataFrame()
 
     # OKX trả data dạng [[ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm], ...]
     df = pd.DataFrame(data, columns=[
         "ts","open","high","low","close","vol","volCcy","volCcyQuote","confirm"
     ])
-    # convert kiểu dữ liệu
-    df["ts"] = pd.to_datetime(df["ts"].astype("int64"), unit="ms", utc=True)
-    numeric_cols = ["open","high","low","close","vol"]
-    df[numeric_cols] = df[numeric_cols].astype(float)
+
+    # parse timestamp an toàn
+    try:
+        df["ts"] = pd.to_datetime(df["ts"].astype(str), unit="ms", utc=True, errors="coerce")
+    except Exception:
+        df["ts"] = pd.to_datetime(df["ts"], utc=True, errors="coerce")
+
+    # convert số
+    numeric_cols = ["open", "high", "low", "close", "vol"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # đảo ngược để chronological (OKX trả mới → cũ)
     df = df.iloc[::-1].reset_index(drop=True)
 
-    return df	
+    logger.info(f"✅ Nhận {len(df)} rows cho {inst_id} ({bar})")
+    return df
+
 def detect_flow_signals(coin: str):
     """
     Return dict with:

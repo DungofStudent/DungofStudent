@@ -473,6 +473,18 @@ async def error_handler(update, context):
     logger.error("Update %s gây lỗi %s", update, context.error)
 app.add_error_handler(error_handler)
 
+from telegram import BotCommand
+
+async def set_main_menu(application):
+    commands = [
+        BotCommand("start", "Bắt đầu"),
+        BotCommand("research", "Research Long/Short"),
+        BotCommand("deepcoin", "Phân tích sâu"),
+        BotCommand("topcoins", "Top Coins"),
+    ]
+    await application.bot.set_my_commands(commands)
+
+
 # ================== OKX HELPERS ==================
 def refresh_markets(limit: int = 60):
     try:
@@ -2355,6 +2367,7 @@ async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================== MAIN ==================
 def main():
     refresh_markets()
+	app.post_init = set_main_menu
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("research", research_command))
     app.add_handler(CommandHandler("deepcoin", research_dca_bot))

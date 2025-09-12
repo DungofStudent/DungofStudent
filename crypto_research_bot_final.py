@@ -206,6 +206,114 @@ LAST_ALERT_TIME = {}
 last_sent = None
 
 alerts = {}
+# ================== Telegram UI ======================
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+# Biến toàn cục để theo dõi trạng thái alerts
+alerts = {}  # key: user_id, value: True/False (trạng thái bật/tắt alert)
+
+def main_menu(user_id: int) -> InlineKeyboardMarkup:
+    """
+    Tạo menu chính cho bot với các nút chức năng.
+    """
+    is_alert_on = alerts.get(user_id, False)
+    buttons = [
+        [
+            InlineKeyboardButton("🔎 Research", callback_data="research_btn"),
+            InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_btn")
+        ],
+        [
+            InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0"),
+            InlineKeyboardButton("📰 Tin tức", callback_data="news_market_menu")
+        ],
+        [
+            InlineKeyboardButton(f"{'✅' if is_alert_on else '❌'} Alerts", callback_data="toggle_alert")
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+def research_choice_markup() -> InlineKeyboardMarkup:
+    """
+    Tạo menu lựa chọn chế độ research (Long/Short).
+    """
+    buttons = [
+        [
+            InlineKeyboardButton("📈 Long", callback_data="research_long"),
+            InlineKeyboardButton("📉 Short", callback_data="research_short")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="main")
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+def coin_actions_markup(coin: str) -> InlineKeyboardMarkup:
+    """
+    Tạo menu hành động cho một coin cụ thể.
+    """
+    buttons = [
+        [
+            InlineKeyboardButton("📈 Chart", callback_data=f"chart:{coin}"),
+            InlineKeyboardButton("📋 Indicators", callback_data=f"ind:{coin}")
+        ],
+        [
+            InlineKeyboardButton("🧠 AI Analysis", callback_data=f"ai:{coin}"),
+            InlineKeyboardButton("💡 News", callback_data=f"news_coin:{coin}")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="back_coins")
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+def coins_page_markup(page: int) -> InlineKeyboardMarkup:
+    """
+    Tạo menu phân trang cho danh sách coins.
+    """
+    global COINS_LIST
+    buttons = []
+    start = page * 10
+    end = start + 10
+    for coin in COINS_LIST[start:end]:
+        buttons.append([InlineKeyboardButton(coin, callback_data=f"coin:{coin}")])
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"topcoins:{page-1}"))
+    if end < len(COINS_LIST):
+        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page+1}"))
+    if nav:
+        buttons.append(nav)
+    buttons.append([InlineKeyboardButton("🔙 Back", callback_data="main")])
+    return InlineKeyboardMarkup(buttons)
+
+def news_menu_markup(coin: str) -> InlineKeyboardMarkup:
+    """
+    Tạo menu tin tức (thị trường hoặc coin cụ thể).
+    """
+    buttons = [
+        [
+            InlineKeyboardButton("🌍 Thị trường", callback_data=f"news_market:{coin}"),
+            InlineKeyboardButton(f"💡 {coin}", callback_data=f"news_coin:{coin}")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data=f"coin:{coin}")
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+def bot_dca_menu() -> InlineKeyboardMarkup:
+    """
+    Tạo menu lựa chọn chế độ Bot DCA.
+    """
+    buttons = [
+        [
+            InlineKeyboardButton("🐂 Bull", callback_data="bot_dca_bull")
+        ],
+        [
+            InlineKeyboardButton("🔙 Back", callback_data="main")
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)
 # ================== Flask routes =====================
 @flask_app.route("/")
 def home():

@@ -462,38 +462,6 @@ def check_liquidity_strength(df):
     except Exception as e:
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
-async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    logger.info(f"📩 Received message: {text}")
-
-    # Xử lý menu chính
-    if text == "🔍 Research":
-        return await research_command(update, context)
-
-    elif text == "🤖 Bot DCA":
-        return await research_dca_bot(update, context)
-
-    elif text == "📊 Top Coins":
-        return await top_coins_handler(update, context)
-
-    elif text == "📰 Tin tức":
-        return await news_handler(update, context)
-
-    elif text == "❌ Alerts":
-        return await alerts_handler(update, context)
-
-    # Nếu user nhập tên coin
-    waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
-    try:
-        final_text = await analyze_coin(update, context, text)   # ✅ phải có dòng này
-
-        for chunk in split_message(final_text):
-            await safe_edit(waiting_msg, chunk, parse_mode=None)
-
-    except Exception as e:
-        logger.warning(f"Lỗi khi phân tích {text}: {e}")
-        await safe_edit(waiting_msg, f"❌ Lỗi khi phân tích {text}")
-
 
 async def error_handler(update, context):
     logger.error("Update %s gây lỗi %s", update, context.error)
@@ -2338,46 +2306,6 @@ async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception(f"deepcoin_handler error: {e}")
         await waiting_msg.edit_text(f"❌ Lỗi khi phân tích {coin}")
 
-async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    text = update.message.text.strip().upper()
-    if not text.endswith("-USDT") and not text.endswith("-USD"):
-        text = text + "-USDT"
-    coin = text
-    waiting_msg = await safe_send(context.bot, chat_id=chat_id, text=f"⏳ Đang phân tích sâu cho {coin}...")
-
-    try:
-        avg, details = multi_tf_score(coin, mode="long")
-        df = get_ohlc_okx(coin, bar="1H", limit=200)
-        price = float(df.iloc[-1]["close"]) if not df.empty else MARKET_MAP.get(coin,{}).get("current_price", 0)
-        res, sup = compute_support_resistance(df, window=90)
-        entry = suggest_entry(details.get("1H",{}).get("inds",{}), price, sup, res, mode="long")
-        text_out = (
-            f"📊  {coin} \n"
-            f"💰 Giá hiện tại:  {round(price, 8)} \n"
-            f"🧭 Score(15m/1H/4H/1D):  {details.get('15m', {'score': 0})['score']:.0f}/{details.get('1H', {'score': 0})['score']:.0f}/{details.get('4H', {'score': 0})['score']:.0f}/{details.get('1D', {'score': 0})['score']:.0f} \n"
-            f"🎯 Entry gợi ý:  {entry} \n"
-            f"🛑 Resistance:  {round(res, 8) if res else 'N/A'} \n"
-            f"🛡️ Support:  {round(sup, 8) if sup else 'N/A'} \n"
-        )
-        volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
-        ai_text = ai_analysis(coin, details, volq, "long")
-        news_list = get_news_coin(coin)
-        news_text = "📰 Tin tức liên quan:\n"  "\n\n".join(news_list)
-        ai_news_text = ai_news_analysis(coin, news_list)
-        final_text = text_out + "\n\n" + news_text + "\n\n" + ai_news_text + "\n\n" + ai_text
-        if waiting_msg:
-            await waiting_msg.edit_text(final_text, parse_mode=None)
-        else:
-            await safe_send(context.bot, chat_id=chat_id, text=final_text, parse_mode=None)
-    except Exception as e:
-        logger.exception(f"text_coin_handler error: {e}")
-        err_text = f"❌ Lỗi khi phân tích {coin}"
-        if waiting_msg:
-            await waiting_msg.edit_text(err_text)
-        else:
-            await safe_send(context.bot, chat_id=chat_id, text=err_text)
-
 
 async def refresh_markets_stub():
     """
@@ -2424,3 +2352,35 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    logger.info(f"📩 Received message: {text}")
+
+    # Xử lý menu chính
+    if text == "🔍 Research":
+        return await research_command(update, context)
+
+    elif text == "🤖 Bot DCA":
+        return await research_dca_bot(update, context)
+
+    elif text == "📊 Top Coins":
+        return await top_coins_handler(update, context)
+
+    elif text == "📰 Tin tức":
+        return await news_handler(update, context)
+
+    elif text == "❌ Alerts":
+        return await alerts_handler(update, context)
+
+    # Nếu user nhập tên coin
+    waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
+    try:
+        final_text = await analyze_coin(update, context, text)
+
+        for chunk in split_message(final_text):
+            await safe_edit(waiting_msg, chunk, parse_mode=None)
+
+    except Exception as e:
+        logger.warning(f"Lỗi khi phân tích {text}: {e}")
+        await safe_edit(waiting_msg, f"❌ Lỗi khi phân tích {text}")

@@ -463,12 +463,37 @@ def check_liquidity_strength(df):
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
 async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"📩 Received message: {update.message.text}")
-    waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
+    text = update.message.text.strip()
+    logger.info(f"📩 Received message: {text}")
 
-    # Chia nhỏ text
-    for chunk in split_message(final_text):
-        await safe_edit(waiting_msg, chunk, parse_mode=None)   # ✅ hợp lệ vì nằm trong async
+    # Trường hợp user bấm nút menu
+    if text == "🔍 Research":
+        return await research_command(update, context)
+
+    elif text == "🤖 Bot DCA":
+        return await research_dca_bot(update, context)
+
+    elif text == "📊 Top Coins":
+        return await top_coins_handler(update, context)
+
+    elif text == "📰 Tin tức":
+        return await news_handler(update, context)
+
+    elif text == "❌ Alerts":
+        return await alerts_handler(update, context)
+
+    # Trường hợp nhập coin
+    waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
+    try:
+        final_text = await analyze_coin(update, context, text)
+
+        for chunk in split_message(final_text):
+            await safe_edit(waiting_msg, chunk, parse_mode=None)
+
+    except Exception as e:
+        logger.warning(f"Lỗi khi phân tích {text}: {e}")
+        await safe_edit(waiting_msg, f"❌ Lỗi khi phân tích {text}")
+
 
 async def error_handler(update, context):
     logger.error("Update %s gây lỗi %s", update, context.error)

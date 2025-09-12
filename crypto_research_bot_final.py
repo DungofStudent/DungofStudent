@@ -596,7 +596,8 @@ def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFram
 
     # parse timestamp an toàn
     try:
-        df["ts"] = pd.to_datetime(df["ts"].astype(str), unit="ms", utc=True, errors="coerce")
+        # parse timestamp an toàn (convert sang int64 trước)
+        df["ts"] = pd.to_datetime(pd.to_numeric(df["ts"], errors="coerce"), unit="ms", utc=True)
     except Exception:
         df["ts"] = pd.to_datetime(df["ts"], utc=True, errors="coerce")
 

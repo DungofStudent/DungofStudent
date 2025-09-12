@@ -2481,6 +2481,27 @@ async def news_market_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.exception(f"news_market_handler error: {e}")
         await update.callback_query.message.reply_text("❌ Lỗi khi lấy tin tức thị trường.")
 
+async def analyze_coin(update: Update, context: ContextTypes.DEFAULT_TYPE, symbol: str):
+    try:
+        results = []
+        for bar in ["15m", "1H", "4H", "1D"]:
+            df = get_ohlc_okx(f"{symbol.upper()}-USDT", bar=bar, limit=200)
+            if df is None or df.empty:
+                results.append(f"⚠️ {bar}: Không đủ dữ liệu")
+                continue
+
+            score, inds = compute_trend_score(df, mode="long")
+            results.append(
+                f"{bar}: Score {score}, RSI {inds.get('rsi')}, EMA12 {inds.get('ema12')}, EMA26 {inds.get('ema26')}"
+            )
+
+        return "\n".join(results)
+
+    except Exception as e:
+        logger.exception(f"analyze_coin error for {symbol}: {e}")
+        return f"❌ Lỗi khi phân tích {symbol}"
+
+
 # ================== MAIN ==================
 def main():
     refresh_markets()

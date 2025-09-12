@@ -466,7 +466,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     logger.info(f"📩 Received message: {text}")
 
-    # Trường hợp user bấm nút menu
+    # Xử lý menu chính
     if text == "🔍 Research":
         return await research_command(update, context)
 
@@ -482,10 +482,10 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "❌ Alerts":
         return await alerts_handler(update, context)
 
-    # Trường hợp nhập coin
+    # Nếu user nhập tên coin
     waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
     try:
-        final_text = await analyze_coin(update, context, text)
+        final_text = await analyze_coin(update, context, text)   # ✅ phải có dòng này
 
         for chunk in split_message(final_text):
             await safe_edit(waiting_msg, chunk, parse_mode=None)

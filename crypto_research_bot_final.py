@@ -346,7 +346,7 @@ def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (O
     except Exception:
         return None, None
 
-def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
+def compute_trend_score(df: pd.DataFrame, mode: str = "long") -> tuple[int, str]:
     """
     Trả về (score, trend_type)
     trend_type = 'bullish' | 'bearish'
@@ -372,9 +372,9 @@ def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
     else:
         score -= 30
 
-    if last["rsi"] > 55:
+    if mode == "long" and last["rsi"] > 55:
         score = 30
-    elif last["rsi"] < 45:
+    elif mode == "short" and last["rsi"] < 45:
         score -= 30
 
     if last["close"] > last["ema50"]:
@@ -385,7 +385,30 @@ def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
     trend_type = "bullish" if score >= 60 else "bearish" if score <= -60 else "neutral"
     return score, trend_type
 
+def multi_tf_score(symbol: str, mode: str = "long") -> tuple[float, dict]:
+    """
+    Compute average trend score across multiple timeframes.
+    Returns (avg_score, details_per_tf)
+    """
+    tfs = {"15m": 100, "1H": 200, "4H": 200, "1D": 90}
+    scores = {}
+    total = 0.0
+    count = 0
 
+    for tf, lim in tfs.items():
+        df = get_ohlc_okx(symbol, bar=tf, limit=lim)
+        if df.empty:
+            logger.warning(f"Dataframe rỗng cho timeframe {tf} của {symbol}. Bỏ qua.")
+            scores[tf] = {"score": 0, "inds": {}}  # Fallback score 0 nếu dataframe rỗng
+            continue
+        score, trend_type = compute_trend_score(df, mode=mode)
+        inds = {}  # Thêm nếu cần chi tiết inds
+        scores[tf] = {"score": score, "inds": inds}
+        total += score
+        count += 1
+
+    avg = total / count if count > 0 else 0.0
+    return avg, scores
 
 def can_alert(coin: str, cooldown: int = 3600):
     """

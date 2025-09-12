@@ -2354,29 +2354,21 @@ async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "🔥 Top Coins theo thanh khoản 24h (OKX):"
     await update.message.reply_text(text, reply_markup=coins_page_markup(0))
 
-
 # ================== MAIN ==================
 def main():
-    application = Application.builder().token(TOKEN).build()
-
-    # Handlers
+    # Refresh market dữ liệu ban đầu
+    refresh_markets()
     app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("research", research_handler))
-    app.add_handler(CommandHandler("research_dca", research_dca_handler))
-    app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
+    app.add_handler(CommandHandler("research", research_command))
+    app.add_handler(CommandHandler("deepcoin", research_dca_bot))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
     app.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_error_handler(error_handler)
 
-    # (Tạm thời bỏ cái healthcheck 8081 để Railway không kill container)
-    # threading.Thread(target=lambda: start_healthcheck_server(port=8081), daemon=True).start()
-
-    # Lấy port Railway cấp
-    port = int(os.getenv("PORT", 8080))
-
-    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False), daemon=True).start()
+    # Start healthcheck server trên thread riêng (tùy chọn)
     threading.Thread(target=start_healthcheck_server, args=(8081,), daemon=True).start()
 
-    logger.info("🚀 Starting bot with Flask webhook...")
+    logger.info("🚀 Starting bot in webhook mode...")
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
@@ -2384,5 +2376,7 @@ def main():
         webhook_url=PTB_WEBHOOK_URL,
         drop_pending_updates=True
     )
+
 if __name__ == "__main__":
     main()
+

@@ -46,6 +46,7 @@ from urllib.parse import urlencode, urljoin
 from telegram import Bot
 from telegram.ext import Application
 from flask import request as flask_request
+from telegram import ReplyKeyboardMarkup
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (

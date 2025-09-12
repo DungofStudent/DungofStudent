@@ -2360,12 +2360,12 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     # Handlers
-    application.add_handler(CommandHandler("start", start_handler))
-    application.add_handler(CommandHandler("research", research_handler))
-    application.add_handler(CommandHandler("research_dca", research_dca_handler))
-    application.add_handler(CommandHandler("deepcoin", deepcoin_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
-    application.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_handler(CommandHandler("start", start_handler))
+    app.add_handler(CommandHandler("research", research_handler))
+    app.add_handler(CommandHandler("research_dca", research_dca_handler))
+    app.add_handler(CommandHandler("deepcoin", deepcoin_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
+    app.add_handler(CallbackQueryHandler(callback_handler))
 
     # (Tạm thời bỏ cái healthcheck 8081 để Railway không kill container)
     # threading.Thread(target=lambda: start_healthcheck_server(port=8081), daemon=True).start()
@@ -2373,13 +2373,16 @@ def main():
     # Lấy port Railway cấp
     port = int(os.getenv("PORT", 8080))
 
-    logger.info("🚀 Starting bot in webhook mode.")
-    application.run_webhook(
+    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False), daemon=True).start()
+    threading.Thread(target=start_healthcheck_server, args=(8081,), daemon=True).start()
+
+    logger.info("🚀 Starting bot with Flask webhook...")
+    app.run_webhook(
         listen="0.0.0.0",
-        port=port,
+        port=PORT,
         url_path=PTB_WEBHOOK_PATH,
         webhook_url=PTB_WEBHOOK_URL,
-        drop_pending_updates=True,
+        drop_pending_updates=True
     )
 if __name__ == "__main__":
     main()

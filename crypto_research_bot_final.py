@@ -142,7 +142,7 @@ PTB_WEBHOOK_PATH = f"webhook/{TOKEN}"
 PTB_WEBHOOK_URL  = f"{RAILWAY_URL}/{PTB_WEBHOOK_PATH}"
 
 # Flask cần route CÓ dấu "/"
-FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"
+#FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"
 
 OKX_DOMAINS = ["https://www.okx.com"]
 
@@ -152,7 +152,7 @@ DEFAULT_HEADERS = {
 }
 
 logger.info(f"✅ Using PTB webhook URL: {PTB_WEBHOOK_URL}")
-logger.info(f"✅ Flask will listen on: {FLASK_WEBHOOK_PATH}")
+#logger.info(f"✅ Flask will listen on: {FLASK_WEBHOOK_PATH}")
 
 # Telegram Application
 application = Application.builder().token(TOKEN).build()

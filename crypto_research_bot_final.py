@@ -206,114 +206,6 @@ LAST_ALERT_TIME = {}
 last_sent = None
 
 alerts = {}
-# ================== Telegram UI ======================
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-# Biến toàn cục để theo dõi trạng thái alerts
-alerts = {}  # key: user_id, value: True/False (trạng thái bật/tắt alert)
-
-def main_menu(user_id: int) -> InlineKeyboardMarkup:
-    """
-    Tạo menu chính cho bot với các nút chức năng.
-    """
-    is_alert_on = alerts.get(user_id, False)
-    buttons = [
-        [
-            InlineKeyboardButton("🔎 Research", callback_data="research_btn"),
-            InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_btn")
-        ],
-        [
-            InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0"),
-            InlineKeyboardButton("📰 Tin tức", callback_data="news_market_menu")
-        ],
-        [
-            InlineKeyboardButton(f"{'✅' if is_alert_on else '❌'} Alerts", callback_data="toggle_alert")
-        ]
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-def research_choice_markup() -> InlineKeyboardMarkup:
-    """
-    Tạo menu lựa chọn chế độ research (Long/Short).
-    """
-    buttons = [
-        [
-            InlineKeyboardButton("📈 Long", callback_data="research_long"),
-            InlineKeyboardButton("📉 Short", callback_data="research_short")
-        ],
-        [
-            InlineKeyboardButton("🔙 Back", callback_data="main")
-        ]
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-def coin_actions_markup(coin: str) -> InlineKeyboardMarkup:
-    """
-    Tạo menu hành động cho một coin cụ thể.
-    """
-    buttons = [
-        [
-            InlineKeyboardButton("📈 Chart", callback_data=f"chart:{coin}"),
-            InlineKeyboardButton("📋 Indicators", callback_data=f"ind:{coin}")
-        ],
-        [
-            InlineKeyboardButton("🧠 AI Analysis", callback_data=f"ai:{coin}"),
-            InlineKeyboardButton("💡 News", callback_data=f"news_coin:{coin}")
-        ],
-        [
-            InlineKeyboardButton("🔙 Back", callback_data="back_coins")
-        ]
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-def coins_page_markup(page: int) -> InlineKeyboardMarkup:
-    """
-    Tạo menu phân trang cho danh sách coins.
-    """
-    global COINS_LIST
-    buttons = []
-    start = page * 10
-    end = start + 10
-    for coin in COINS_LIST[start:end]:
-        buttons.append([InlineKeyboardButton(coin, callback_data=f"coin:{coin}")])
-    nav = []
-    if page > 0:
-        nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"topcoins:{page-1}"))
-    if end < len(COINS_LIST):
-        nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"topcoins:{page+1}"))
-    if nav:
-        buttons.append(nav)
-    buttons.append([InlineKeyboardButton("🔙 Back", callback_data="main")])
-    return InlineKeyboardMarkup(buttons)
-
-def news_menu_markup(coin: str) -> InlineKeyboardMarkup:
-    """
-    Tạo menu tin tức (thị trường hoặc coin cụ thể).
-    """
-    buttons = [
-        [
-            InlineKeyboardButton("🌍 Thị trường", callback_data=f"news_market:{coin}"),
-            InlineKeyboardButton(f"💡 {coin}", callback_data=f"news_coin:{coin}")
-        ],
-        [
-            InlineKeyboardButton("🔙 Back", callback_data=f"coin:{coin}")
-        ]
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-def bot_dca_menu() -> InlineKeyboardMarkup:
-    """
-    Tạo menu lựa chọn chế độ Bot DCA.
-    """
-    buttons = [
-        [
-            InlineKeyboardButton("🐂 Bull", callback_data="bot_dca_bull")
-        ],
-        [
-            InlineKeyboardButton("🔙 Back", callback_data="main")
-        ]
-    ]
-    return InlineKeyboardMarkup(buttons)
 # ================== Flask routes =====================
 @flask_app.route("/")
 def home():
@@ -351,61 +243,45 @@ def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (O
     except Exception:
         return None, None
 
-def compute_trend_score(df: pd.DataFrame, mode: str = "long"):
+def compute_trend_score(df: pd.DataFrame) -> tuple[int, str]:
     """
-    Composite score (0..100) for 'clarity' of trend.
-    - EMA alignment & slope
-    - MACD vs signal & histogram sign
-    - RSI position (bullish: 50-70; bearish: 30-50)
-    - ADX strength (>20)
+    Trả về (score, trend_type)
+    trend_type = 'bullish' | 'bearish'
     """
-    if not isinstance(df, pd.DataFrame) or df.empty or len(df) < 50:
-        return 0.0, {}
+    if df is None or len(df) < 50:
+        return 0, "neutral"
 
-    inds = _indicators(df)
-    if not inds:
-        return 0.0, {}
+    df = df.copy()
+    df["ema20"] = df["close"].ewm(span=20).mean()
+    df["ema50"] = df["close"].ewm(span=50).mean()
 
-    d = df.copy().set_index("ts")
-    c = d["close"]
-    ema12 = d["close"].ewm(span=12).mean()
-    ema26 = d["close"].ewm(span=26).mean()
-    # Slope estimates (per bar)
-    slope12 = (ema12.iloc[-1] - ema12.iloc[-5]) / 5.0
-    slope26 = (ema26.iloc[-1] - ema26.iloc[-5]) / 5.0
+    # RSI
+    delta = df["close"].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = -delta.where(delta < 0, 0).rolling(14).mean()
+    rs = gain / (loss + 1e-9)
+    df["rsi"] = 100 - (100 / (1 + rs))
+    last = df.iloc[-1]
+    score = 0
 
-    score = 0.0
-    # EMA alignment and slope
-    if inds.get("ema12") is not None and inds.get("ema26") is not None:
-        if mode == "long" and inds["ema12"] > inds["ema26"] and slope12 > 0:
-            score += 30  # Bullish EMA alignment with positive slope
-        elif mode == "short" and inds["ema12"] < inds["ema26"] and slope12 < 0:
-            score += 30  # Bearish EMA alignment with negative slope
+    if last["ema20"] > last["ema50"]:
+        score = 30
+    else:
+        score -= 30
 
-    # MACD signal
-    if inds.get("macd") is not None and inds.get("macd_signal") is not None:
-        if mode == "long" and inds["macd"] > inds["macd_signal"] and inds["macd_hist"] > 0:
-            score += 30  # Bullish MACD crossover
-        elif mode == "short" and inds["macd"] < inds["macd_signal"] and inds["macd_hist"] < 0:
-            score += 30  # Bearish MACD crossover
+    if last["rsi"] > 55:
+        score = 30
+    elif last["rsi"] < 45:
+        score -= 30
 
-    # RSI position
-    if inds.get("rsi") is not None:
-        if mode == "long" and 50 <= inds["rsi"] <= 70:
-            score += 20  # RSI in bullish zone
-        elif mode == "short" and 30 <= inds["rsi"] <= 50:
-            score += 20  # RSI in bearish zone
-        elif inds["rsi"] > 70 or inds["rsi"] < 30:
-            score -= 10  # Overbought/oversold penalty
+    if last["close"] > last["ema50"]:
+        score = 40
+    else:
+        score -= 40
 
-    # ADX strength
-    if inds.get("adx") is not None and inds["adx"] > 20:
-        score += 20  # Strong trend (ADX > 20)
+    trend_type = "bullish" if score >= 60 else "bearish" if score <= -60 else "neutral"
+    return score, trend_type
 
-    # Normalize score to 0-100
-    score = max(0, min(100, score))
-
-    return score, inds
 
 
 def can_alert(coin: str, cooldown: int = 3600):
@@ -551,12 +427,10 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, header
             r.raise_for_status()
             j = r.json()
             if isinstance(j, dict) and j.get("code") not in (None, "0"):
-                # OKX sometimes returns {"code":"1",...}
                 logger.debug(f"okx public non-zero code: {j}")
             return j
         except requests.exceptions.HTTPError as e:
             logger.exception(f"OKX HTTPError: {url} {params} {e}")
-            # if final attempt, break and return {}
             time.sleep(1)
         except Exception as e:
             logger.exception(f"OKX request error: {url} {params} {e}")
@@ -891,7 +765,6 @@ def fetch_okx_data(endpoint: str, params: dict = None, method: str = "GET"):
 def okx_get_json_with_proxy(url, params=None, headers=None, timeout=10):
     """Try request with optional proxy fallback."""
     try:
-        # thử request bình thường trước
         r = requests.get(url, params=params, headers=headers, timeout=timeout)
         if r.status_code == 403 and proxies:
             # nếu 403 → thử lại với proxy
@@ -1314,6 +1187,8 @@ def multi_tf_score(symbol: str, mode: str = "long") -> tuple[float, dict]:
     for tf, lim in tfs.items():
         df = get_ohlc_okx(symbol, bar=tf, limit=lim)
         if df.empty:
+            logger.warning(f"Dataframe rỗng cho timeframe {tf} của {symbol}. Bỏ qua.")
+            scores[tf] = {"score": 0, "inds": {}}  # Fallback score 0 nếu dataframe rỗng
             continue
         score, inds = compute_trend_score(df, mode=mode)
         scores[tf] = {"score": score, "inds": inds}
@@ -1428,23 +1303,37 @@ def grid_levels(price: float, support: Optional[float] = None, resistance: Optio
 def is_new_coin(symbol: str, days: int = 30) -> bool:
     """
     Kiểm tra xem coin có phải là coin mới list không.
+    Logic: nếu trong MARKET_MAP có 'list_date' thì dùng,
+    nếu không có thì fallback dựa vào dữ liệu OHLC (thời điểm nến đầu tiên).
     """
+    info = MARKET_MAP.get(symbol, {})
+    list_date = info.get("list_date")
+    if list_date:
+        try:
+            first_date = pd.to_datetime(list_date, utc=True)
+            return (dt.datetime.now(dt.UTC) - first_date).days <= days
+        except Exception:
+            pass
+
     try:
         df = get_ohlc_okx(symbol, bar="1D", limit=400)
-        if not df.empty:
+        if isinstance(df, pd.DataFrame) and not df.empty:
             first_date = df["ts"].min()
             return (dt.datetime.now(dt.UTC) - first_date).days <= days
     except Exception:
         pass
+
     return False
+
 
 def get_funding_rate(symbol: str) -> float | None:
     """
     Lấy funding rate của perpetual futures từ OKX.
+    Nếu không có trả về None.
     """
     try:
         endpoint = "/api/v5/public/funding-rate"
-        params = {"instId": f"{symbol}-SWAP"}
+        params = {"instId": f"{symbol}-SWAP"}  # funding áp dụng cho contract SWAP
         j = okx_get_json(OKX_BASE.rstrip("/") + endpoint, params=params)
         data = j.get("data", []) if j else []
         if data:
@@ -1453,9 +1342,14 @@ def get_funding_rate(symbol: str) -> float | None:
         logger.warning(f"⚠️ funding rate fetch failed for {symbol}: {e}")
     return None
 
+
 def filter_dca_candidates(symbols: list[str]) -> list[str]:
     """
-    Lọc danh sách coin theo tiêu chí đủ điều kiện DCA.
+    Lọc danh sách coin theo tiêu chí đủ điều kiện DCA:
+    - Thanh khoản cao
+    - Coin mới
+    - Funding âm
+    - Tăng trưởng mạnh trong 24h
     """
     candidates = []
     for cid in symbols:
@@ -1467,7 +1361,7 @@ def filter_dca_candidates(symbols: list[str]) -> list[str]:
                 continue
             df1h = get_ohlc_okx(cid, bar="1H", limit=200)
             growth = percent_change_over_period(df1h, lookback=24) or 0.0
-            if growth < 10:
+            if growth < 10:  # ví dụ yêu cầu >=10%
                 continue
             candidates.append(cid)
         except Exception:
@@ -1475,15 +1369,352 @@ def filter_dca_candidates(symbols: list[str]) -> list[str]:
             continue
     return candidates
 
-def ai_analysis(coin: str, details: dict, volq: float, mode: str) -> str:
-    prompt = f"Phân tích xu hướng {mode.upper()} cho {coin} dựa trên chỉ báo: {details}. Thanh khoản 24h: {volq}. Tóm tắt ngắn gọn bằng tiếng Việt."
-    return ai_summarize(prompt)
+# === Bot commands & handlers ===
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_handler(update, context)
 
-def ai_news_analysis(coin: str, news_list: list) -> str:
-    if not news_list:
-        return "🧠 Phân tích AI từ tin tức: Không có tin tức."
-    prompt = f"Phân tích tác động của các tin tức sau đến {coin}: {'; '.join(news_list)}. Tóm tắt bằng tiếng Việt."
-    return "🧠 Phân tích AI từ tin tức:\n" + ai_summarize(prompt)
+async def research_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /research [coin1 coin2 ...] - quick research for given coins or defaults in MARKET_MAP
+    This function will:
+      - compute simple scores for multiple timeframes
+      - compute support/resistance D1
+      - produce DCA (15/20/30)  Grid suggestion (10)
+    """
+    args = context.args or []
+    coins = [a.upper() for a in args] if args else list(MARKET_MAP.keys())[:20]
+    if not coins:
+        await update.message.reply_text("No coins available in MARKET_MAP. Please populate MARKET_MAP or pass coins as args.")
+        return
+
+    lines = []
+    for coin in coins:
+        try:
+            # fetch candles for multiple timeframes
+            df15 = get_ohlc_okx(coin, bar="15m", limit=200)
+            df1h = get_ohlc_okx(coin, bar="1H", limit=200)
+            df4h = get_ohlc_okx(coin, bar="4H", limit=200)
+            df1d = get_ohlc_okx(coin, bar="1D", limit=200)
+
+            price = None
+            if not df1h.empty:
+                price = float(df1h.iloc[-1]["close"])
+            elif coin in MARKET_MAP:
+                price = MARKET_MAP[coin].get("current_price")
+
+            if not price:
+                continue
+
+            s15, _ = compute_trend_score(df15)
+            s1h, _ = compute_trend_score(df1h)
+            s4h, _ = compute_trend_score(df4h)
+            s1d, _ = compute_trend_score(df1d)
+            avg_score = round((s15 + s1h + s4h + s1d) / 4.0, 1)
+
+            # compute support/resistance on D1 for robust "hard" SR
+            sup_d1, res_d1 = compute_support_resistance_from_df(df1d, window=90)
+            # fallback to H1 if D1 not available
+            if sup_d1 is None or res_d1 is None:
+                sup_d1, res_d1 = compute_support_resistance_from_df(df1h, window=90)
+
+            # compute short pct 24h if available
+            pct_24h = 0.0
+            if not df1d.empty and len(df1d) >= 2:
+                last = df1d.iloc[-1]["close"]
+                prev = df1d.iloc[-2]["close"]
+                pct_24h = ((last - prev) / prev) * 100.0 if prev != 0 else 0.0
+
+            # DCA & grid suggestions
+            cfg15 = suggest_dca_future(price, 15, support=sup_d1)
+            cfg20 = suggest_dca_future(price, 20, support=sup_d1)
+            cfg30 = suggest_dca_future(price, 30, support=sup_d1)
+            grid_cfg = suggest_grid_future(price, support=sup_d1, resistance=res_d1, grids=10)
+
+            # produce text compact
+            line = (
+                f" {coin}  | Score(avg):  {avg_score} \n"
+                f"15m/1H/4H/1D:  {int(s15)}/{int(s1h)}/{int(s4h)}/{int(s1d)} \n"
+                f"Price:  {price:.8f}  | 1DΔ:  {pct_24h:.2f}% \n"
+                f"Support(D1):  {sup_d1}  | Resistance(D1):  {res_d1} \n"
+                f"🤖 DCA Future (TP={cfg15['tp_pct']}%, Lev=x{cfg15['leverage']}):\n"
+                f" • Base step%: {cfg15['base_step_pct']}% | Money×: {cfg15['money_multiplier']} | Step×: {cfg15['step_multiplier']}\n"
+                f" • MaxDrawdownNeeded ≈  {cfg15['max_drawdown_pct']}% \n"
+                f" • 15 orders sample: {', '.join(map(lambda x: str(x['price']), cfg15['steps'][:5]))}...\n"
+                f" • 20 orders sample: {', '.join(map(lambda x: str(x['price']), cfg20['steps'][:5]))}...\n"
+                f" • 30 orders sample: {', '.join(map(lambda x: str(x['price']), cfg30['steps'][:5]))}...\n"
+				f"Sức chống chịu (max drawdown): {cfg15['max_drawdown_pct']}%"
+                f"🔲 Grid: {len(grid_cfg['grid_levels'])-1} grids | step% ≈ {grid_cfg['grid_step_pct']}% | Range: {grid_cfg['support']} ↔ {grid_cfg['resistance']}\n"
+            )
+            lines.append(line)
+        except Exception:
+            logger.exception(f"research_command error for {coin}")
+
+    out = "\n\n".join(lines) if lines else "No results"
+    await update.message.reply_text(out, parse_mode="HTML", disable_web_page_preview=True)
+
+async def research_dca_bot(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "bull"):
+    """
+    Optimized scan for Bot DCA candidates.
+    Only Bull mode supported (as requested). Conditions:
+      - vol_quote_24h >= MIN_QUOTE_VOL
+      - is_new_coin(...) == True  (if REQUIRE_NEW_COIN)
+      - funding rate < 0 (if REQUIRE_FUNDING_NEGATIVE)
+      - 24h growth >= MIN_24H_GROWTH_PCT
+    """
+    # Tuning parameters (you can adjust these constants)
+    MIN_QUOTE_VOL_LOCAL = globals().get("MIN_QUOTE_VOL", 10_000_000)
+    MIN_24H_GROWTH_PCT = 5.0          # minimal 24h increase (%) to consider
+    REQUIRE_NEW_COIN = True           # only consider new listings
+    REQUIRE_FUNDING_NEGATIVE = True   # require funding < 0
+    MAX_COINS_TO_CHECK = 120         # limit to speed up scan
+
+    lines = []
+    checked = 0
+    # iterate top liquidity coins first
+    for coin, info in sorted(MARKET_MAP.items(), key=lambda kv: kv[1].get("vol_quote_24h", 0), reverse=True):
+        if checked >= MAX_COINS_TO_CHECK:
+            break
+        checked += 1
+        try:
+            price = info.get("current_price")
+            volq = info.get("vol_quote_24h", 0)
+            if not price or volq < MIN_QUOTE_VOL_LOCAL:
+                continue
+
+            # D1 candles to compute trendscore/support
+            df1d = get_ohlc_okx(coin, bar="1D", limit=200)
+            if df1d.empty or len(df1d) < 30:
+                continue
+
+            # require bullish trend on D1 (compute_trend_score returns (score, type))
+            trend_score, trend_type = compute_trend_score(df1d)
+            if trend_type != "bullish":
+                continue
+
+            # optional require new coin (helps pick momentum listings)
+            if REQUIRE_NEW_COIN and not is_new_coin(coin, days=60):
+                continue
+
+            # funding rate negative requirement
+            if REQUIRE_FUNDING_NEGATIVE:
+                try:
+                    funding = get_funding_rate(coin.replace("-USDT",""))  # get_funding_rate expects symbol format mostly
+                    if funding is None or funding >= 0:
+                        continue
+                except Exception:
+                    continue
+
+            # 24h growth
+            # compute approximate 24h change using df1d last two rows
+            try:
+                last = float(df1d.iloc[-1]["close"])
+                prev = float(df1d.iloc[-2]["close"])
+                growth_24h = ((last - prev) / prev) * 100.0 if prev != 0 else 0.0
+            except Exception:
+                growth_24h = 0.0
+            if growth_24h < MIN_24H_GROWTH_PCT:
+                continue
+
+            # support (D1)
+            sup, res = compute_support_resistance_from_df(df1d, window=90)
+            if not sup or sup >= price:
+                continue
+
+            max_dd_pct = ((price - sup) / price) * 100.0
+            step15 = round(max_dd_pct / 15, 3)
+            step20 = round(max_dd_pct / 20, 3)
+            step30 = round(max_dd_pct / 30, 3)
+
+            margin = 20
+            kq15 = round(margin * 15 * (max_dd_pct/100), 3)
+            kq20 = round(margin * 20 * (max_dd_pct/100), 3)
+            kq30 = round(margin * 30 * (max_dd_pct/100), 3)
+
+            # pretty trend label
+            trend_label = "🟢 Uptrend (Bull)" if trend_type == "bullish" else "⚪ Neutral"
+
+            text = (
+                f"🔎 <b>{coin}</b>\n"
+                f"💵 Giá hiện tại: <b>{price:.6f}</b>\n"
+                f"💧 Vol24h: ~{int(volq):,} USDT\n"
+                f"🛡️ Support (D1): {sup:.6f} | Resistance: {res:.6f}\n"
+                f"📉 Max Drawdown cần: {max_dd_pct:.2f}%\n"
+                f"📊 Trend Score: <b>{trend_score:.0f}</b> | {trend_label}\n"
+                f"📈 24h growth: {growth_24h:.2f}%\n\n"
+                f"➡️ <b>Bước giá gợi ý</b> (margin×{margin}):\n"
+                f"• 15 orders: {step15}% | Ký quỹ ≈ {kq15}\n"
+                f"• 20 orders: {step20}% | Ký quỹ ≈ {kq20}\n"
+                f"• 30 orders: {step30}% | Ký quỹ ≈ {kq30}\n"
+                f"🔗 Funding: {funding if 'funding' in locals() else 'N/A'}\n"
+                "────────────────────────"
+            )
+            lines.append(text)
+
+        except Exception as e:
+            logger.exception(f"DCA research error {coin}: {e}")
+            continue
+
+    out = "\n\n".join(lines) if lines else "❌ Không tìm thấy coin phù hợp."
+    chat_id = update.effective_chat.id
+    await safe_send(context.bot, chat_id=chat_id, text=out, parse_mode="HTML", disable_web_page_preview=True)
+async def dca_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ /dca <COIN>
+    Prints full DCA and Grid suggestions for a coin
+    """
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("Usage: /dca COIN (e.g. /dca BTC-USDT)")
+        return
+    coin = args[0].upper()
+    # fetch price  SR D1
+    df1h = get_ohlc_okx(coin, bar="1H", limit=200)
+    df1d = get_ohlc_okx(coin, bar="1D", limit=200)
+    price = None
+    if not df1h.empty:
+        price = float(df1h.iloc[-1]["close"])
+    elif coin in MARKET_MAP:
+        price = MARKET_MAP[coin].get("current_price")
+
+    sup_d1, res_d1 = compute_support_resistance_from_df(df1d, window=90)
+    if sup_d1 is None or res_d1 is None:
+        sup_d1, res_d1 = compute_support_resistance_from_df(df1h, window=200)
+
+    if not price:
+        await update.message.reply_text(f"Cannot find price for {coin}")
+        return
+
+    cfg15 = suggest_dca_future(price, 15, support=sup_d1)
+    cfg20 = suggest_dca_future(price, 20, support=sup_d1)
+    cfg30 = suggest_dca_future(price, 30, support=sup_d1)
+    grid_cfg = suggest_grid_future(price, support=sup_d1, resistance=res_d1, grids=10)
+
+    parts = [
+        f"⚙️ DCA & Grid suggestions for {coin}",
+        f"Price: {price:.8f}",
+        f"TP: {cfg15['tp_pct']}% | Leverage: x{cfg15['leverage']}",
+        "",
+        "DCA 15 orders (order,price,step%,money×):",
+        "\n".join([f"{s['order']}: {s['price']} | step%={s['step_pct']} | money×={s['money_x']}" for s in cfg15['steps']]),
+        "",
+        "DCA 20 orders sample (first 10):",
+        "\n".join([f"{s['order']}: {s['price']} | step%={s['step_pct']} | money×={s['money_x']}" for s in cfg20['steps'][:10]]),
+        "",
+        "DCA 30 orders sample (first 10):",
+        "\n".join([f"{s['order']}: {s['price']} | step%={s['step_pct']} | money×={s['money_x']}" for s in cfg30['steps'][:10]]),
+        "",
+        "Grid (10 grids):",
+        ", ".join(map(str, grid_cfg['grid_levels'])),
+        "",
+        f"Support(D1): {sup_d1} | Resistance(D1): {res_d1}",
+    ]
+    text = "\n".join(parts)
+    await update.message.reply_text(text)
+
+async def scan_alerts(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        for coin in COINS_LIST:
+            df = get_ohlc_okx(coin, bar="1H", limit=200)
+            if df.empty:
+                continue
+
+
+            price = float(df.iloc[-1]["close"])
+            score, details = multi_tf_score(coin, mode="long")
+
+
+            # 🔎 Kiểm tra thanh khoản
+            ok, liq_text = check_liquidity_strength(df)
+
+
+            if abs(score) >= 3 and ok and can_alert(coin):
+                msg = (
+                    f"🚨 Alert {coin}\n"
+                    f"💰 Giá: {price}\n"
+                    f"{liq_text}\n"
+                    f"📊 Score(15m/1H/4H/1D): "
+                    f"{details['15m']['score']:.0f}/"
+                    f"{details['1H']['score']:.0f}/"
+                    f"{details['4H']['score']:.0f}/"
+                    f"{details['1D']['score']:.0f}"
+                )
+                for chat_id in ALERT_CHAT_IDS:
+                    await safe_send(context.bot, chat_id,text=msg)
+    except Exception as e:
+        logger.exception(f"scan_alerts error: {e}")
+
+async def send_flow_alerts(context, coin: str, sig: dict):
+    """
+    Gửi cảnh báo Pump/Dump thật với phân tích tiếp diễn
+    sig: dict từ detect_flow_multi_tf
+    """
+    tf = sig.get("tf") or "?"
+    d = sig.get("details", {})
+    last_vol = d.get("last_vol", 0)
+    mean_vol = d.get("mean_prev_vol", 0)
+    pct = d.get("price_change_pct", 0.0)
+    inflow = sig.get("inflow")
+    outflow = sig.get("outflow")
+
+    # Lấy dữ liệu 1H để phân tích kỹ thuật
+    df = get_ohlc_okx(coin, bar="1H", limit=200)
+    score_long, inds = compute_trend_score(df, mode="long")
+    score_short, inds_short = compute_trend_score(df, mode="short")
+
+    # Các chỉ báo chính
+    ema12, ema26 = inds.get("ema12"), inds.get("ema26")
+    macd, macd_sig = inds.get("macd"), inds.get("macd_signal")
+    rsi = inds.get("rsi")
+
+    # Kết luận pump/dump tiếp diễn
+    continuation = "❓ Chưa rõ xu hướng tiếp diễn."
+    if inflow:
+        if score_long >= 50 and ema12 > ema26:
+            if macd and macd_sig and macd > macd_sig and (rsi is None or rsi < 75):
+                continuation = "🚀 Khả năng cao tiếp tục PUMP mạnh (EMA & MACD đồng thuận, RSI chưa quá mua)."
+            else:
+                continuation = "⚡ Pump mạnh nhưng chỉ báo chưa đồng thuận hoàn toàn."
+        else:
+            continuation = "⚠️ Pump nhưng xu hướng chưa chắc chắn (cẩn thận trap)."
+
+    elif outflow:
+        if score_short >= 50 and ema12 < ema26:
+            if macd and macd_sig and macd < macd_sig and (rsi is None or rsi > 25):
+                continuation = "⚠️ Khả năng cao tiếp tục DUMP mạnh (EMA & MACD đồng thuận, RSI chưa quá bán)."
+            else:
+                continuation = "⚡ Dump mạnh nhưng chỉ báo chưa đồng thuận hoàn toàn."
+        else:
+            continuation = "⚠️ Dump nhưng xu hướng chưa chắc chắn (cẩn thận trap)."
+
+    # Xây tin nhắn gửi đi
+    if inflow:
+        msg = (
+            f"🔥 [15m] INFLOW đột biến: {coin}\n"
+            f"Vol: {last_vol:.0f} | MeanPrev: {mean_vol:.0f}\n"
+            f"Δ: {pct:.2f}% | Strength: x{d.get('inflow_strength') or 0:.2f}\n\n"
+            f"{continuation}"
+        )
+    else:
+        msg = (
+            f"⚠️ [15m] OUTFLOW đột biến: {coin}\n"
+            f"Vol: {last_vol:.0f} | MeanPrev: {mean_vol:.0f}\n"
+            f"Δ: {pct:.2f}% | Strength: x{d.get('outflow_strength') or 0:.2f}\n\n"
+            f"{continuation}"
+        )
+
+    # Gửi tới các chat đã bật Alerts
+    for chat in list(ALERT_CHAT_IDS):
+        try:
+            await safe_send(context.bot,chat_id=chat, text=msg)
+        except Exception as e:
+            logger.exception("Failed to send flow alert")
+
+async def reset_webhook(app: Application):
+    bot: Bot = app.bot
+    # Xóa webhook cũ
+    await bot.delete_webhook()
+    logger.info("❌ Old webhook deleted")
+    # Đặt webhook mới
+    await bot.set_webhook(url=WEBHOOK_URL)
+    logger.info(f"✅ New webhook set: {WEBHOOK_URL}")
 
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1530,7 +1761,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("ind:"):
         coin = data.split(":")[1]
         df = get_ohlc_okx(coin, bar="1H", limit=200)
-        _, inds = compute_trend_score(df, mode="long")  # returns score  inds
+        _, inds = compute_trend_score(df, mode="long")
         if not inds:
             await safe_send(context.bot,chat_id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
             return
@@ -1628,7 +1859,6 @@ import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
     global last_sent
     utcnow = dt.datetime.now(dt.timezone.utc)
-# Khi gán last_sent cũng phải dùng aware datetime
     if not last_sent or (utcnow - last_sent) >= FLOW_IMMEDIATE_COOLDOWN:
         last_sent = utcnow
     """
@@ -1694,8 +1924,6 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
                                 logger.exception("Failed to send price change alert")
 
             # Multi-TF flow detection (immediate alerts to toggled chats)
-            # Multi-TF flow detection (immediate alerts to toggled chats)
-            # Multi-TF flow detection (immediate alerts to toggled chats)
             sig = await detect_flow_multi_tf(cid)
             if sig and (sig.get("inflow") or sig.get("outflow")):
                 tf = sig.get("tf") or "?"
@@ -1742,7 +1970,8 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
     for cid in liquid_syms:
         try:
             avg, details = multi_tf_score(cid, mode=mode)
-            per_tf_ok = all((details[tf]["score"] >= (55 if tf!="1D" else 45)) for tf in ["15m","1H","4H","1D"])
+            # Sửa KeyError: Kiểm tra nếu tf tồn tại trước khi truy cập
+            per_tf_ok = all((details.get(tf, {"score": 0})["score"] >= (55 if tf!="1D" else 45)) for tf in ["15m","1H","4H","1D"])
             if not per_tf_ok:
                 continue
 
@@ -1766,10 +1995,10 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
             results.append({
                 "coin": cid,
                 "avg_score": round(avg,1),
-                "s15": round(details["15m"]["score"],1),
-                "s1h": round(details["1H"]["score"],1),
-                "s4h": round(details["4H"]["score"],1),
-                "s1d": round(details["1D"]["score"],1),
+                "s15": round(details.get("15m", {"score": 0})["score"],1),
+                "s1h": round(details.get("1H", {"score": 0})["score"],1),
+                "s4h": round(details.get("4H", {"score": 0})["score"],1),
+                "s1d": round(details.get("1D", {"score": 0})["score"],1),
                 "price": round(price, 8),
                 "pct_24h": round(pct, 2),
                 "entry": entry,
@@ -1842,7 +2071,7 @@ async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
             # --- Phân tích xu hướng (chỉ chọn xu hướng tăng) ---
             avg, details = multi_tf_score(cid, mode="long")
-            per_tf_ok = all((details[tf]["score"] >= (55 if tf != "1D" else 45)) for tf in ["15m", "1H", "4H", "1D"])
+            per_tf_ok = all((details.get(tf, {"score": 0})["score"] >= (55 if tf != "1D" else 45)) for tf in ["15m", "1H", "4H", "1D"])
             if not per_tf_ok:
                 continue
 
@@ -1861,10 +2090,10 @@ async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             results.append({
                 "coin": cid,
                 "avg_score": round(avg, 1),
-                "s15": round(details["15m"]["score"], 1),
-                "s1h": round(details["1H"]["score"], 1),
-                "s4h": round(details["4H"]["score"], 1),
-                "s1d": round(details["1D"]["score"], 1),
+                "s15": round(details.get("15m", {"score": 0})["score"], 1),
+                "s1h": round(details.get("1H", {"score": 0})["score"], 1),
+                "s4h": round(details.get("4H", {"score": 0})["score"], 1),
+                "s1d": round(details.get("1D", {"score": 0})["score"], 1),
                 "price": round(price, 8),
                 "pct_24h": round(growth, 2),
                 "entry": entry,
@@ -1928,7 +2157,7 @@ async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tech_text = (
             f"📊 Tóm tắt kỹ thuật:\n"
             f"- Giá: {price}\n- Kháng cự: {res}\n- Hỗ trợ: {sup}\n"
-            f"- Score(15m/1H/4H/1D): {details['15m']['score']:.0f}/{details['1H']['score']:.0f}/{details['4H']['score']:.0f}/{details['1D']['score']:.0f}\n"
+            f"- Score(15m/1H/4H/1D): {details.get('15m', {'score': 0})['score']:.0f}/{details.get('1H', {'score': 0})['score']:.0f}/{details.get('4H', {'score': 0})['score']:.0f}/{details.get('1D', {'score': 0})['score']:.0f}\n"
         )
         ai_news_text = ai_news_analysis(coin, news_list)
 
@@ -1955,7 +2184,7 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text_out = (
             f"📊  {coin} \n"
             f"💰 Giá hiện tại:  {round(price, 8)} \n"
-            f"🧭 Score(15m/1H/4H/1D):  {details['15m']['score']:.0f}/{details['1H']['score']:.0f}/{details['4H']['score']:.0f}/{details['1D']['score']:.0f} \n"
+            f"🧭 Score(15m/1H/4H/1D):  {details.get('15m', {'score': 0})['score']:.0f}/{details.get('1H', {'score': 0})['score']:.0f}/{details.get('4H', {'score': 0})['score']:.0f}/{details.get('1D', {'score': 0})['score']:.0f} \n"
             f"🎯 Entry gợi ý:  {entry} \n"
             f"🛑 Resistance:  {round(res, 8) if res else 'N/A'} \n"
             f"🛡️ Support:  {round(sup, 8) if sup else 'N/A'} \n"

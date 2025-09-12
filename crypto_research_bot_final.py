@@ -2009,6 +2009,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await safe_send(context.bot, chat_id=chat_id, text=text, parse_mode="HTML")
 
+    elif data.startswith("chart:"):
+        coin = data.split(":", 1)[1]
+        await chart_handler(update, context, coin)
+
+    elif data.startswith("ind:"):
+        coin = data.split(":", 1)[1]
+        await indicators_handler(update, context, coin)
+
+    elif data.startswith("ai:"):
+        coin = data.split(":", 1)[1]
+        await ai_analysis(update, context, coin)
+
+    elif data == "news_market_menu" or data.startswith("news_market"):
+        await news_market_handler(update, context)
+
+
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
     global last_sent
@@ -2399,6 +2415,71 @@ async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     refresh_markets(limit=100)
     text = "🔥 Top Coins theo thanh khoản 24h (OKX):"
     await update.message.reply_text(text, reply_markup=coins_page_markup(0))
+
+# ================== HANDLERS: CHART, INDICATORS, AI, NEWS ==================
+
+async def chart_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: str):
+    try:
+        df = get_ohlc_okx(coin, bar="1H", limit=200)
+        if df.empty:
+            await update.callback_query.message.reply_text(f"⚠️ Không có dữ liệu chart cho {coin}")
+            return
+        # đơn giản demo: gửi giá cuối
+        price = df.iloc[-1]["close"]
+        await update.callback_query.message.reply_text(f"📈 Chart {coin} (demo): giá cuối {price}")
+        # TODO: bạn có thể viết create_price_chart vẽ matplotlib chart và gửi bằng send_photo
+    except Exception as e:
+        logger.exception(f"chart_handler error for {coin}: {e}")
+        await update.callback_query.message.reply_text(f"❌ Lỗi khi tạo chart {coin}")
+
+
+async def indicators_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: str):
+    try:
+        df = get_ohlc_okx(coin, bar="1H", limit=200)
+        if df.empty:
+            await update.callback_query.message.reply_text(f"⚠️ Không có dữ liệu indicators cho {coin}")
+            return
+        inds = _indicators(df)
+        text = f"📋 Indicators {coin}:\n{json.dumps(inds, indent=2, ensure_ascii=False)}"
+        await update.callback_query.message.reply_text(text)
+    except Exception as e:
+        logger.exception(f"indicators_handler error for {coin}: {e}")
+        await update.callback_query.message.reply_text(f"❌ Lỗi khi tính indicators cho {coin}")
+
+
+async def ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: str):
+    try:
+        prompt = f"Phân tích xu hướng giá, rủi ro và cơ hội giao dịch của {coin} trong ngắn hạn và dài hạn."
+        summary = ai_summarize(prompt)
+        await update.callback_query.message.reply_text(f"🧠 AI Analysis {coin}:\n{summary}")
+    except Exception as e:
+        logger.exception(f"ai_analysis error for {coin}: {e}")
+        await update.callback_query.message.reply_text(f"❌ Lỗi AI analysis cho {coin}")
+
+
+async def news_market_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global LAST_NEWS_IDS
+    try:
+        news_list = get_news_general(limit=20)  # lấy nhiều rồi lọc
+        sent = 0
+        out = []
+        for n in news_list:
+            # dùng title làm id
+            nid = n.split("\n")[0]
+            if nid in LAST_NEWS_IDS:
+                continue
+            LAST_NEWS_IDS.add(nid)
+            out.append(n)
+            sent += 1
+            if sent >= 15:  # gửi tối đa 15 tin
+                break
+        if not out:
+            await update.callback_query.message.reply_text("ℹ️ Không có tin mới.")
+        else:
+            await update.callback_query.message.reply_text("📰 Tin tức thị trường:\n\n" + "\n\n".join(out[:15]), disable_web_page_preview=True)
+    except Exception as e:
+        logger.exception(f"news_market_handler error: {e}")
+        await update.callback_query.message.reply_text("❌ Lỗi khi lấy tin tức thị trường.")
 
 # ================== MAIN ==================
 def main():

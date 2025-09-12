@@ -154,7 +154,6 @@ DEFAULT_HEADERS = {
 logger.info(f"✅ Using PTB webhook URL: {PTB_WEBHOOK_URL}")
 logger.info(f"✅ Flask will listen on: {FLASK_WEBHOOK_PATH}")
 
-flask_app = Flask(__name__)
 # Telegram Application
 application = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
@@ -2355,10 +2354,7 @@ async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================== MAIN ==================
 def main():
-    # Refresh dữ liệu market ban đầu
     refresh_markets()
-
-    # Gắn các handlers
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("research", research_command))
     app.add_handler(CommandHandler("deepcoin", research_dca_bot))
@@ -2366,10 +2362,8 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_error_handler(error_handler)
 
-    # Start healthcheck server trên thread riêng (tùy chọn)
     threading.Thread(target=start_healthcheck_server, args=(8081,), daemon=True).start()
 
-    # Chạy webhook (process chính của container)
     port = int(os.getenv("PORT", 8080))
     logger.info("🚀 Starting bot in webhook mode (PTB only)...")
     app.run_webhook(
@@ -2380,6 +2374,6 @@ def main():
         drop_pending_updates=True
     )
 
-
 if __name__ == "__main__":
     main()
+

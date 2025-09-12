@@ -2278,38 +2278,57 @@ async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     logger.info(f"📩 Received message: {text}")
 
-    # Map menu cố định sang hành động callback tương ứng
+    # ===== MENU CHÍNH =====
     if text == "🔍 Research":
-        return await research_handler(update, context, mode="long")   # hoặc gọi research_command nếu bạn muốn menu phụ
+        # mở menu chọn Long/Short
+        await update.message.reply_text(
+            "🔎 Chọn chế độ Research:",
+            reply_markup=research_choice_markup()
+        )
+        return
 
     elif text == "🤖 Bot DCA":
-        return await research_dca_bot(update, context, mode="bull")
+        # mở menu Bot DCA
+        await update.message.reply_text(
+            "Chọn chế độ lọc Bot DCA: (chỉ Bull)",
+            reply_markup=bot_dca_menu()
+        )
+        return
 
     elif text == "📊 Top Coins":
-        return await top_coins_handler(update, context)
+        # show top coins
+        await update.message.reply_text(
+            "🔥 Top Coins theo thanh khoản:",
+            reply_markup=coins_page_markup(0)
+        )
+        return
 
     elif text == "📰 Tin tức":
+        # show tin tức hôm nay
         news_list = get_news_today(limit=10)
         news_text = "📰 Tin tức hôm nay:\n\n" + "\n\n".join(news_list)
-        return await update.message.reply_text(news_text)
+        await update.message.reply_text(news_text)
+        return
 
     elif text == "❌ Alerts":
         user_id = update.effective_user.id
         alerts[user_id] = not alerts.get(user_id, False)
-        return await update.message.reply_text(
+        await update.message.reply_text(
             f"🔔 Alerts {'bật' if alerts[user_id] else 'tắt'}"
         )
+        return
 
-    # Nếu user nhập tên coin thủ công
+    # ===== NGƯỜI DÙNG NHẬP COIN =====
     waiting_msg = await update.message.reply_text("⏳ Đang xử lý...")
     try:
         final_text = await analyze_coin(update, context, text)
+
         for chunk in split_message(final_text):
             await safe_edit(waiting_msg, chunk, parse_mode=None)
+
     except Exception as e:
         logger.warning(f"Lỗi khi phân tích {text}: {e}")
         await safe_edit(waiting_msg, f"❌ Lỗi khi phân tích {text}")
-
 
 
 async def deepcoin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

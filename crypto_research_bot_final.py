@@ -141,7 +141,6 @@ if not RAILWAY_URL:
 PTB_WEBHOOK_PATH = f"webhook/{TOKEN}"
 PTB_WEBHOOK_URL  = f"{RAILWAY_URL}/{PTB_WEBHOOK_PATH}"
 
-
 # Flask cần route CÓ dấu "/"
 FLASK_WEBHOOK_PATH = f"/{PTB_WEBHOOK_PATH}"
 

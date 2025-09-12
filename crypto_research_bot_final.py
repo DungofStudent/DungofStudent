@@ -2356,7 +2356,6 @@ async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================== MAIN ==================
 def main():
     # Refresh market dữ liệu ban đầu
-    refresh_markets()
     app.add_handler(CommandHandler("start", start_handler))
     app.add_handler(CommandHandler("research", research_command))
     app.add_handler(CommandHandler("deepcoin", research_dca_bot))
@@ -2366,15 +2365,15 @@ def main():
 
     # Start healthcheck server trên thread riêng (tùy chọn)
     threading.Thread(target=start_healthcheck_server, args=(8081,), daemon=True).start()
-
-    logger.info("🚀 Starting bot in webhook mode...")
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8080))
+    refresh_markets()
+    logger.info("🚀 Starting bot in webhook mode (PTB only)...")
     app.run_webhook(
         listen="0.0.0.0",
-        port=PORT,
+        port=port,
         url_path=PTB_WEBHOOK_PATH,
         webhook_url=PTB_WEBHOOK_URL,
         drop_pending_updates=True
     )
 
-if __name__ == "__main__":
-    main()

@@ -156,6 +156,8 @@ logger.info(f"✅ Using PTB webhook URL: {PTB_WEBHOOK_URL}")
 logger.info(f"✅ Flask will listen on: {FLASK_WEBHOOK_PATH}")
 
 flask_app = Flask(__name__)
+# Telegram Application
+application = Application.builder().token(TOKEN).build()
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
@@ -2377,4 +2379,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

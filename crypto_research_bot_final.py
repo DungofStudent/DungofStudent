@@ -2167,90 +2167,86 @@ def get_funding_rate(symbol: str) -> float:
     return 0.0
 
 async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "long"):
+    """
+    Scan top 200 coins Futures USDT theo xu hướng Long/Short.
+    Dựa trên multi timeframe trend score.
+    """
     query = update.callback_query
-    chat_id = update.effective_chat.id
-    title = "📈 Long" if mode == "long" else "📉 Short"
-    lines = [f"🔎 Research {title} (Futures USDT)\n"]
+    await query.answer()
+    await safe_edit(query.message, "⏳ Đang quét thị trường...")
 
-    # chỉ lấy cặp USDT futures
-    coins = [c for c in MARKET_MAP.keys() if c.endswith("USDT")]
-
+    coins = list(MARKET_MAP.keys())[:200]
+    results = []
     for coin in coins:
         try:
-            df1h = get_ohlc_okx(coin, bar="1H", limit=200)
-            df4h = get_ohlc_okx(coin, bar="4H", limit=200)
-            if df1h.empty or df4h.empty:
-                continue
-
-            _, ind1h = compute_trend_score(df1h, mode=mode)
-            _, ind4h = compute_trend_score(df4h, mode=mode)
-
-            if mode == "long" and (ind1h.get("signal") != "long" or ind4h.get("signal") != "long"):
-                continue
-            if mode == "short" and (ind1h.get("signal") != "short" or ind4h.get("signal") != "short"):
-                continue
-
-            volq = MARKET_MAP[coin].get("vol_quote_24h", 0)
-            lines.append(f"• {coin:<10} | {title} | 💵 {volq:,.0f} USDT")
+            avg, _ = multi_tf_score(coin, mode=mode)
+            if (mode == "long" and avg > 30) or (mode == "short" and avg < -30):
+                liq = MARKET_MAP[coin].get("vol_quote_24h", 0)
+                emoji = "🐂" if mode == "long" else "🐻"
+                results.append(f"{emoji} {coin} | Score={avg:.1f} | 💰{liq/1e6:.1f}M USDT")
         except Exception:
-            logger.exception(f"research_handler error {coin}")
+            continue
 
-    text = "\n".join(lines) if len(lines) > 1 else "❌ Không tìm thấy coin phù hợp."
-    await safe_send(context.bot, chat_id=chat_id, text=text)
+    if not results:
+        out = "⚠️ Không tìm thấy coin phù hợp."
+    else:
+        out = "\n".join(results[:40])
+
+    await safe_edit(query.message, out, parse_mode="HTML")
 
 
 async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Scan top 100 coins Futures USDT cho Bot DCA:
+      - Thanh khoản cao
+      - Coin mới
+      - Funding âm
+      - Tính hỗ trợ gần nhất và sinh 3 bộ DCA (15/20/30).
+    """
     query = update.callback_query
-    chat_id = update.effective_chat.id
-    lines = ["🤖 Bot DCA - Gợi ý (Futures USDT)\n"]
+    await query.answer()
+    await safe_edit(query.message, "⏳ Đang scan Bot DCA...")
 
-    now = datetime.datetime.now(datetime.UTC)  # fix deprecated utcnow()
-    coins = [c for c in MARKET_MAP.keys() if c.endswith("USDT")]
-
+    coins = list(MARKET_MAP.keys())[:100]
+    results = []
     for coin in coins:
         try:
             volq = MARKET_MAP[coin].get("vol_quote_24h", 0)
-            listed_date = MARKET_MAP[coin].get("listed_at")  # datetime
-            if not listed_date:
+            if volq < MIN_QUOTE_VOL:
                 continue
-            age_days = (now - listed_date).days
-            if volq < 1e7 or age_days > 90:
+            if not is_new_coin(coin):
                 continue
-
-            fr = get_funding_rate(coin)
-            if fr >= 0:
+            funding = get_funding_rate(coin.replace("-USDT", ""))
+            if funding is None or funding >= 0:
                 continue
 
-            df = get_ohlc_okx(coin, bar="1D", limit=200)
+            df = get_ohlc_okx(coin, "1D", 120)
             if df.empty:
                 continue
             price = float(df.iloc[-1]["close"])
-            sup, res = compute_support_resistance(df, window=90)
+            sup, _ = compute_support_resistance_from_df(df, 90)
 
-            def gen_dca_steps(n: int, support: float):
-                levels = []
-                step = (price - support) / n
-                for i in range(1, n+1):
-                    levels.append(price - step * i)
-                return levels
+            dca15 = suggest_dca_future(price, 15, support=sup)
+            dca20 = suggest_dca_future(price, 20, support=sup)
+            dca30 = suggest_dca_future(price, 30, support=sup)
 
-            d15 = gen_dca_steps(15, sup)
-            d20 = gen_dca_steps(20, sup)
-            d30 = gen_dca_steps(30, sup)
-
-            lines.append(
-                f"• {coin:<10} | Funding: {fr:.4%} | 💵 {volq:,.0f}\n"
-                f"   🛡️ Support: {sup:.4f}\n"
-                f"   🔹 15 lệnh: {', '.join(f'{x:.4f}' for x in d15[:3])}...\n"
-                f"   🔹 20 lệnh: {', '.join(f'{x:.4f}' for x in d20[:3])}...\n"
-                f"   🔹 30 lệnh: {', '.join(f'{x:.4f}' for x in d30[:3])}..."
+            results.append(
+                f"✨ <b>{coin}</b> @ {price:.4f}\n"
+                f"💰 {volq/1e6:.1f}M USDT | Funding={funding:.4%}\n"
+                f"📉 Support≈{sup}\n"
+                f"📊 DCA15: {dca15['steps'][:3]}...\n"
+                f"📊 DCA20: {dca20['steps'][:3]}...\n"
+                f"📊 DCA30: {dca30['steps'][:3]}...\n"
             )
-
         except Exception:
-            logger.exception(f"research_dca_handler error {coin}")
+            continue
 
-    text = "\n\n".join(lines) if len(lines) > 1 else "❌ Không tìm thấy coin phù hợp."
-    await safe_send(context.bot, chat_id=chat_id, text=text)
+    if not results:
+        out = "⚠️ Không tìm thấy ứng viên DCA."
+    else:
+        out = "\n\n".join(results[:8])  # giới hạn 8 coin để dễ đọc
+
+    await safe_edit(query.message, out, parse_mode="HTML")
 
 async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2489,10 +2485,7 @@ async def news_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True)
 
-
 # ---------- Main startup ----------
-
-
 def compute_pct_change_24h(symbol: str) -> float | None:
     """Compute approximate 24h percent change using 1D candles (last two closes)."""
     try:
@@ -2505,22 +2498,113 @@ def compute_pct_change_24h(symbol: str) -> float | None:
     except Exception:
         return None
 
-def get_top_coins(page: int = 0, per_page: int = 10) -> list:
-    """Return coins sorted by 24h % change desc. Phân trang."""
-    lst = []
-    for sym, info in MARKET_MAP.items():
-        if not sym.endswith("USDT"):
+# ================== NEW HANDLERS ==================
+
+async def get_top_coins(page: int = 0):
+    """
+    Lấy top 30 coins tăng giá mạnh nhất trong 24h, hiển thị 10 coins/trang.
+    Trả về (list coins, tổng số coins).
+    """
+    data = fetch_tickers_okx()
+    coins = []
+    for t in data:
+        if not t.get("instId", "").endswith("USDT-SWAP"):
             continue
-        pct = info.get('pct_change_24h')
-        if pct is None:
-            pct = compute_pct_change_24h(sym) or 0.0
-        lst.append((sym, pct, info.get('vol_quote_24h', 0)))
+        try:
+            change = float(t.get("change24h", 0) or 0)
+            volq = float(t.get("volCcy24h", 0) or 0)
+        except Exception:
+            continue
+        coins.append((t["instId"].replace("-SWAP", ""), change, volq))
 
-    lst.sort(key=lambda x: (x[1], x[2]), reverse=True)
+    # Sắp xếp giảm dần theo % tăng
+    top = sorted(coins, key=lambda x: x[1], reverse=True)[:30]
+    start, end = page * 10, (page + 1) * 10
+    return top[start:end], len(top)
 
-    start = page * per_page
-    end = start + per_page
-    return [x[0] for x in lst[start:end]]
+
+async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "long"):
+    """
+    Scan top 200 coins Futures USDT theo xu hướng Long/Short.
+    Dựa trên multi timeframe trend score.
+    """
+    query = update.callback_query
+    await query.answer()
+    await safe_edit(query.message, "⏳ Đang quét thị trường...")
+
+    coins = list(MARKET_MAP.keys())[:200]
+    results = []
+    for coin in coins:
+        try:
+            avg, _ = multi_tf_score(coin, mode=mode)
+            if (mode == "long" and avg > 30) or (mode == "short" and avg < -30):
+                liq = MARKET_MAP[coin].get("vol_quote_24h", 0)
+                emoji = "🐂" if mode == "long" else "🐻"
+                results.append(f"{emoji} {coin} | Score={avg:.1f} | 💰{liq/1e6:.1f}M USDT")
+        except Exception:
+            continue
+
+    if not results:
+        out = "⚠️ Không tìm thấy coin phù hợp."
+    else:
+        out = "\n".join(results[:40])
+
+    await safe_edit(query.message, out, parse_mode="HTML")
+
+
+async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Scan top 100 coins Futures USDT cho Bot DCA:
+      - Thanh khoản cao
+      - Coin mới
+      - Funding âm
+      - Tính hỗ trợ gần nhất và sinh 3 bộ DCA (15/20/30).
+    """
+    query = update.callback_query
+    await query.answer()
+    await safe_edit(query.message, "⏳ Đang scan Bot DCA...")
+
+    coins = list(MARKET_MAP.keys())[:100]
+    results = []
+    for coin in coins:
+        try:
+            volq = MARKET_MAP[coin].get("vol_quote_24h", 0)
+            if volq < MIN_QUOTE_VOL:
+                continue
+            if not is_new_coin(coin):
+                continue
+            funding = get_funding_rate(coin.replace("-USDT", ""))
+            if funding is None or funding >= 0:
+                continue
+
+            df = get_ohlc_okx(coin, "1D", 120)
+            if df.empty:
+                continue
+            price = float(df.iloc[-1]["close"])
+            sup, _ = compute_support_resistance_from_df(df, 90)
+
+            dca15 = suggest_dca_future(price, 15, support=sup)
+            dca20 = suggest_dca_future(price, 20, support=sup)
+            dca30 = suggest_dca_future(price, 30, support=sup)
+
+            results.append(
+                f"✨ <b>{coin}</b> @ {price:.4f}\n"
+                f"💰 {volq/1e6:.1f}M USDT | Funding={funding:.4%}\n"
+                f"📉 Support≈{sup}\n"
+                f"📊 DCA15: {dca15['steps'][:3]}...\n"
+                f"📊 DCA20: {dca20['steps'][:3]}...\n"
+                f"📊 DCA30: {dca30['steps'][:3]}...\n"
+            )
+        except Exception:
+            continue
+
+    if not results:
+        out = "⚠️ Không tìm thấy ứng viên DCA."
+    else:
+        out = "\n\n".join(results[:8])  # giới hạn 8 coin để dễ đọc
+
+    await safe_edit(query.message, out, parse_mode="HTML")
+
 
 def filter_research_coins(mode: str = "long", top_n: int = 15) -> list:
     """Return list of top_n symbols that have high liquidity and clear trend for given mode.

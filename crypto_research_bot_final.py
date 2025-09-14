@@ -1863,9 +1863,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🏠 Menu", reply_markup=main_menu(update.effective_user.id))
         return
 
-    elif data.startswith("topcoins:"):
+     if data.startswith("topcoins:"):
         page = int(data.split(":")[1])
-        await safe_edit(query.message, text="🔥 Top Coins theo thanh khoản:", reply_markup=coins_page_markup(page))
+        coins, total = await get_top_coins(page)
+        text = "📊 <b>Top 30 coins tăng mạnh 24h</b>\n\n"
+        text += "\n".join(
+            [f"🔥 {c[0]} | {c[1]:+.2f}% | 💰{c[2]/1e6:.1f}M USDT" for c in coins]
+        )
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("⬅️ Before", callback_data=f"topcoins:{page-1}"))
+        if (page+1)*10 < total:
+            nav.append(InlineKeyboardButton("➡️ Next", callback_data=f"topcoins:{page+1}"))
+        nav.append(InlineKeyboardButton("🏠 Menu", callback_data="main"))
+        await safe_edit(query.message, text, reply_markup=InlineKeyboardMarkup([nav]), parse_mode="HTML")
         return
 
     elif data.startswith("coin:"):
@@ -1961,13 +1972,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
         return
 
-    if data == "research_long":
+    elif data == "research_long":
         await research_handler(update, context, mode="long")
-        return
-
     elif data == "research_short":
         await research_handler(update, context, mode="short")
-        return
     
     if data == "bot_dca_btn":
         # show dca options; for demo we only have bull option
@@ -1976,10 +1984,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Chọn chế độ lọc Bot DCA:", reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    if data == "bot_dca_bull":
+    elif data == "bot_dca_bull":
         await research_dca_handler(update, context)
-        return
-        return
 
     elif data.startswith("dca:"):
         coin = data.split(":")[1]

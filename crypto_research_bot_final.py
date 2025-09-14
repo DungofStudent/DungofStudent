@@ -1747,7 +1747,7 @@ async def reset_webhook(app: Application):
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Received /start from user {update.effective_user.id if update.effective_user else 'unknown'}")
-    await update.message.reply_text("👋 Crypto Research Bot", reply_markup=main_menu_markup())
+    await update.message.reply_text("👋 Crypto Research Bot", reply_markup=main_menu(update.effective_user.id))
 
 async def research_run(update_obj, context: ContextTypes.DEFAULT_TYPE, mode: str = "long"):
     """Run research scanning TOP_COINS; update_obj may be callback_query or message object (for flexibility)."""

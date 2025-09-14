@@ -1920,10 +1920,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         return
 		
-    if data == "research_btn":
-        await query.edit_message_text("🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
-        return", reply_markup=research_choice_markup())
+    elif data == "research_btn":
+        # show research options
+        await query.edit_message_text(
+            "🔎 Chọn chế độ Research:",
+            reply_markup=research_choice_markup()
+        )
         return
+
 		
     elif data == "news_market_menu":
         news_list = get_news_today(limit=10)

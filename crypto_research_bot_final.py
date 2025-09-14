@@ -43,6 +43,8 @@ from flask import Flask, request
 from urllib.parse import urlencode
 import asyncio
 from urllib.parse import urlencode, urljoin
+from typing import List, Dict, Any, Optional, Tuple
+
 
 from telegram import Bot
 from telegram.ext import Application
@@ -217,6 +219,10 @@ LAST_ALERT_TIME = {}
 last_sent = None
 
 alerts = {}
+
+NEWS_FETCH_LIMIT = 20   # số tin fetch mặc định
+NEWS_PAGE_SIZE = 5      # số tin mỗi trang khi phân trang menu
+
 # ================== TELEGRAM UI  =====================
 def main_menu(user_id: int) -> InlineKeyboardMarkup:
     """
@@ -385,7 +391,7 @@ def compute_trend_score(df: pd.DataFrame, mode: str = "long") -> Tuple[int, Dict
     trend = "bullish" if score >= 40 else "bearish" if score <= -40 else "neutral"
     return score, {"rsi": round(float(last.get("rsi14") or 0), 2), "trend": trend}
 
-def multi_tf_score(symbol: str, mode: str = "long") -> tuple[float, dict]:
+def multi_tf_score(symbol: str) -> Tuple[float, Dict[str, Any]]:
     """
     Compute average trend score across multiple timeframes.
     Returns (avg_score, details_per_tf)

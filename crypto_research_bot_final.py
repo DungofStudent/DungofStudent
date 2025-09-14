@@ -230,7 +230,7 @@ def main_menu(update: Update):
         ],
         [
             InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0"),
-            InlineKeyboardButton("📰 Tin tức", callback_data="news_market_menu")
+            InlineKeyboardButton("📰 Tin tức", callback_data="news")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)

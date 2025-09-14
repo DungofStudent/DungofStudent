@@ -1859,11 +1859,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await research_handler(update, context, symbol=symbol, mode=mode)
         return
 
-    if data == "main":
-        await query.edit_message_text("🏠 Menu", reply_markup=main_menu(update.effective_user.id))
-        return
+    elif data == "main":
+        await safe_edit(query.message, "🏠 Main Menu", reply_markup=main_menu(update))
 
-     if data.startswith("topcoins:"):
+    if data.startswith("topcoins:"):
         page = int(data.split(":")[1])
         coins, total = await get_top_coins(page)
         text = "📊 <b>Top 30 coins tăng mạnh 24h</b>\n\n"

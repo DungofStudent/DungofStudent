@@ -1866,6 +1866,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("topcoins:"):
         page = int(data.split(":")[1])
         await safe_edit(query.message, text="🔥 Top Coins theo thanh khoản:", reply_markup=coins_page_markup(page))
+        return
 
     elif data.startswith("coin:"):
         coin = data.split(":")[1]
@@ -1873,12 +1874,14 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         txt = f"🔎 {coin}\\nGiá: {price} USDT\\nThanh khoản 24h: ~{volq:,.0f} USDT"
         await safe_send(context.bot, chat_id=chat_id, text=txt, reply_markup=coin_actions_markup(coin))
+        return
 
     elif data.startswith("chart:"):
         coin = data.split(":")[1]
         df = get_ohlc_okx(coin, bar="1D", limit=200)
         buf = create_price_chart(df, coin)
         await context.bot.send_photo(chat_id=chat_id, photo=buf, caption=f"📊 {coin} - 1D")
+        return
 
     elif data.startswith("ind:"):
         coin = data.split(":")[1]
@@ -1895,6 +1898,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"- ADX: {inds.get('adx')}\n"
                 f"- Signal: {inds.get('signal')}\n")
         await safe_send(context.bot,chat_id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
+        return
 
     elif data.startswith("ai:"):
         coin = data.split(":")[1]
@@ -1902,9 +1906,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         ai_text = ai_analysis(coin, details, volq, "long")
         await safe_send(context.bot,chat_id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
+        return
 
     elif data == "back_coins":
         await safe_send(context.bot,chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
+        return
 
     elif data == "toggle_alert":
         user_id = update.effective_user.id
@@ -1914,6 +1920,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="🏠 Menu",
             reply_markup=main_menu(user_id)
         )
+        return
 
     if data in ("research_long", "research_short"):
         await research_callback_wrapper(update, context)
@@ -1933,28 +1940,34 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         news_list = get_news_today(limit=10)
         text = "📰 Tin tức hôm nay:\n\n"  "\n\n".join(news_list)
         await query.message.reply_text(text)
+        return
 
     elif data.startswith("news_menu:"):
         coin = data.split(":")[1]
         await safe_edit(update.callback_query.message, "📰 Chọn loại tin tức:", reply_markup=news_menu_markup(coin))
+        return
 
     elif data.startswith("news_market:"):
         coin = data.split(":")[1]
         news_list = fetch_all_news()
         news_text = "📰 Tin tức thị trường:\n\n"  "\n\n".join(news_list)
         await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        return
 
     elif data.startswith("news_coin:"):
         coin = data.split(":")[1]
         news_list = get_news_coin(coin)
         news_text = f"💡 Tin tức về {coin}:\n\n"  "\n\n".join(news_list)
         await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        return
 
     if data == "research_long":
         await research_handler(update, context, mode="long")
+        return
 
     elif data == "research_short":
         await research_handler(update, context, mode="short")
+        return
     
     if data == "bot_dca_btn":
         # show dca options; for demo we only have bull option
@@ -1990,18 +2003,22 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{' | '.join(f'{x:.6f}' for x in grid10)}\n"
         )
         await safe_send(context.bot, chat_id=chat_id, text=text, parse_mode="HTML")
+        return
 
     elif data.startswith("chart:"):
         coin = data.split(":", 1)[1]
         await chart_handler(update, context, coin)
+        return
 
     elif data.startswith("ind:"):
         coin = data.split(":", 1)[1]
         await indicators_handler(update, context, coin)
+        return
 
     elif data.startswith("ai:"):
         coin = data.split(":", 1)[1]
         await ai_analysis(update, context, coin)
+        return
 
     elif data == "news_market_menu" or data.startswith("news_market"):
         await news_market_handler(update, context)
@@ -2017,14 +2034,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if has_more:
             buttons.append([InlineKeyboardButton("📩 Xem thêm tin tức", callback_data="news_more")])
         await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True)
+        return
 
     if data.startswith("news:"):
         await news_page_handler(update, context)
         return
         return
 
-    # fallback
-    await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update.effective_user.id))
+    else:
+        await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update.effective_user.id))
+
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):

@@ -1882,14 +1882,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(text)
         return
 
-    elif data == "news":
-        news_list = await fetch_general_news()
-        news_text = "\n".join([f"📰 {n}" for n in news_list[:5]]) if news_list else "Không có tin tức."
-        ai_view = await ai_market_view(news_list)
-        final_text = f"📰 <b>Tin tức thị trường</b>\n\n{news_text}\n\n🤖 Nhận định AI:\n{ai_view}"
-        await safe_edit(query.message, final_text, parse_mode="HTML", reply_markup=main_menu(update))
-
-
     elif data.startswith("news_menu:"):
         coin = data.split(":")[1]
         await safe_edit(update.callback_query.message, "📰 Chọn loại tin tức:", reply_markup=news_menu_markup(coin))
@@ -1990,22 +1982,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update.effective_user.id))
 
-async def ai_summarize_coin(coin, news_list, details):
-    prompt = f"""
-    Hãy tóm tắt xu hướng sắp tới của {coin} dựa vào dữ liệu sau:
-    - Phân tích kỹ thuật: {details}
-    - Tin tức: {news_list}
-    Trả lời ngắn gọn bằng tiếng Việt.
-    """
-    return await call_openai_api(prompt)  # đã có API gọi AI
-
-async def ai_market_view(news_list):
-    prompt = f"""
-    Đây là một số tin tức thị trường crypto gần đây: {news_list}.
-    Hãy tóm tắt tâm lý thị trường và xu hướng ngắn hạn.
-    Trả lời ngắn gọn bằng tiếng Việt.
-    """
-    return await call_openai_api(prompt)
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
@@ -2348,38 +2324,6 @@ async def top_coins_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "🔥 Top Coins theo thanh khoản 24h (OKX):"
     await update.message.reply_text(text, reply_markup=coins_page_markup(0))
 
-# Xử lý user chat tên coin
-async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip().upper()
-    if text.isalpha() and len(text) <= 6:   # ví dụ BTC, ETH
-        coin = f"{text}-USDT-SWAP"
-        await analyze_coin_with_ai(update, context, coin)
-    else:
-        return  # bỏ qua message khác
-async def analyze_coin_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: str):
-    try:
-        # Phân tích kỹ thuật
-        df = get_ohlc_okx(coin, "1H", 200)
-        if df.empty:
-            await update.message.reply_text(f"❌ Không có dữ liệu cho {coin}")
-            return
-        score, details = compute_trend_score(df, mode="long")
-        tech_text = f"📊 <b>{coin}</b>\nRSI={details.get('rsi')} | Xu hướng={details.get('trend')} | Score={score:.2f}"
-
-        # Tin tức liên quan coin
-        news_list = await fetch_news_related(coin.split("-")[0])
-        news_text = "\n".join([f"📰 {n}" for n in news_list[:3]]) if news_list else "Không có tin tức mới."
-
-        # Nhận định AI
-        ai_summary = await ai_summarize_coin(coin, news_list, details)
-
-        final_text = f"{tech_text}\n\n{news_text}\n\n🤖 Nhận định AI:\n{ai_summary}"
-        await update.message.reply_text(final_text, parse_mode="HTML")
-    except Exception as e:
-        logger.exception(f"analyze_coin_with_ai error: {e}")
-        await update.message.reply_text("❌ Lỗi khi phân tích coin.")
-
-
 # ================== HANDLERS: CHART, INDICATORS, AI, NEWS ==================
 
 async def chart_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: str):
@@ -2632,8 +2576,6 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(CallbackQueryHandler(news_page_handler, pattern=r"^news:"))
     app.add_handler(CommandHandler("refresh_news", lambda u,c: (ensure_news_buffer(), u.message.reply_text(f"Refreshed: {len(NEWS_BUFFER)} items"))))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-
 
     # set bot commands after startup
     async def _post_init(application: Application):
@@ -2693,3 +2635,50 @@ def suggest_grid_future(price: float, support: float = None, resistance: float =
     }
 if __name__ == "__main__":
     main()
+
+# ================== AI hỗ trợ phân tích ==================
+
+async def ai_summarize_coin(coin, news_list, details):
+    prompt = f"""
+    Hãy tóm tắt xu hướng sắp tới của {coin} dựa vào dữ liệu sau:
+    - Phân tích kỹ thuật: {details}
+    - Tin tức: {news_list}
+    Trả lời ngắn gọn bằng tiếng Việt.
+    """
+    return await call_openai_api(prompt)
+
+async def ai_market_view(news_list):
+    prompt = f"""
+    Đây là một số tin tức thị trường crypto gần đây: {news_list}.
+    Hãy tóm tắt tâm lý thị trường và xu hướng ngắn hạn.
+    Trả lời ngắn gọn bằng tiếng Việt.
+    """
+    return await call_openai_api(prompt)
+
+# ================== PHÂN TÍCH COIN QUA CHAT ==================
+
+async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip().upper()
+    if text.isalpha() and len(text) <= 6:   # ví dụ BTC, ETH
+        coin = f"{text}-USDT-SWAP"
+        await analyze_coin_with_ai(update, context, coin)
+
+async def analyze_coin_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: str):
+    try:
+        df = get_ohlc_okx(coin, "1H", 200)
+        if df.empty:
+            await update.message.reply_text(f"❌ Không có dữ liệu cho {coin}")
+            return
+        score, details = compute_trend_score(df, mode="long")
+        tech_text = f"📊 <b>{coin}</b>\nRSI={details.get('rsi')} | Xu hướng={details.get('trend')} | Score={score:.2f}"
+
+        news_list = await fetch_news_related(coin.split("-")[0])
+        news_text = "\n".join([f"📰 {n}" for n in news_list[:3]]) if news_list else "Không có tin tức mới."
+
+        ai_summary = await ai_summarize_coin(coin, news_list, details)
+
+        final_text = f"{tech_text}\n\n{news_text}\n\n🤖 Nhận định AI:\n{ai_summary}"
+        await update.message.reply_text(final_text, parse_mode="HTML")
+    except Exception as e:
+        logger.exception(f"analyze_coin_with_ai error: {e}")
+        await update.message.reply_text("❌ Lỗi khi phân tích coin.")

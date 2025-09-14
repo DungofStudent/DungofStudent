@@ -220,11 +220,24 @@ last_sent = None
 alerts = {}
 
 # ================== TELEGRAM UI  =====================
-def main_menu(user_id: int) -> InlineKeyboardMarkup:
+def main_menu(user_id=None) -> InlineKeyboardMarkup:
     """
-    Tạo menu chính cho bot với các nút chức năng.
+    main_menu can accept either an int user_id or an update-like object.
+    It will attempt to extract an integer user id in a few common ways.
     """
-    is_alert_on = alerts.get(user_id, False)
+    # normalize user_id
+    try:
+        if isinstance(user_id, int):
+            uid = user_id
+        elif hasattr(user_id, 'effective_user') and getattr(user_id, 'effective_user') is not None:
+            uid = user_id.effective_user.id
+        elif hasattr(user_id, 'from_user') and getattr(user_id, 'from_user') is not None:
+            uid = user_id.from_user.id
+        else:
+            uid = 0
+    except Exception:
+        uid = 0
+    is_alert_on = alerts.get(uid, False)
     buttons = [
         [
             InlineKeyboardButton("🔎 Research", callback_data="research_btn"),
@@ -279,6 +292,12 @@ def coins_page_markup(page: int) -> InlineKeyboardMarkup:
     Tạo menu phân trang cho danh sách coins.
     """
     global COINS_LIST
+    # populate COINS_LIST from OKX/top-percentage-change if empty
+    if not COINS_LIST:
+        try:
+            COINS_LIST = get_top_coins(limit=200)
+        except Exception:
+            COINS_LIST = list(MARKET_MAP.keys())
     buttons = []
     start = page * 10
     end = start + 10
@@ -309,10 +328,9 @@ def news_menu_markup(coin: str) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(buttons)
 
+
 def bot_dca_menu() -> InlineKeyboardMarkup:
-    """
-    Tạo menu lựa chọn chế độ Bot DCA.
-    """
+    """Tạo menu lựa chọn chế độ Bot DCA."""
     buttons = [
         [
             InlineKeyboardButton("🐂 Bull", callback_data="bot_dca_bull")
@@ -322,6 +340,12 @@ def bot_dca_menu() -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(buttons)
+
+def main_menu_markup(user=None) -> InlineKeyboardMarkup:
+    """Compatibility wrapper used across older code: returns main menu markup.
+    If user is None, menu will be shown with default (alerts off).
+    """
+    return main_menu(user)
 # ================== Flask routes =====================
 #@flask_app.route("/")
 #def home():
@@ -1321,6 +1345,34 @@ def suggest_dca_future(price: float, num_orders: int, support: Optional[float] =
         steps.append(round(entry, 6))
     return {"price_now": price, "max_dd_pct": round(max_dd_pct, 2), "steps": steps, "avg_step_pct": round(avg_step_pct, 4)}
 
+def dca_result_to_text(results):
+    """Convert DCA scan results (list or dict) into a user-friendly text.
+    Accepts:
+      - list[str] -> preformatted lines
+      - dict -> {symbol: {..}} -> formatted table
+    """
+    lines = ["🤖 Kết quả Bot DCA (các ứng viên):"]
+    if isinstance(results, dict):
+        for sym, info in results.items():
+            roi = info.get('roi') if isinstance(info, dict) else None
+            price = info.get('price') if isinstance(info, dict) else None
+            avg_entry = info.get('avg_entry') if isinstance(info, dict) else None
+            extra = []
+            if roi is not None:
+                extra.append(f"ROI={roi:.2f}%")
+            if avg_entry is not None:
+                extra.append(f"AvgEntry={avg_entry}")
+            if price is not None:
+                extra.append(f"Price={price}")
+            lines.append(f"{sym}: " + " | ".join(extra))
+    elif isinstance(results, (list, tuple)):
+        for r in results:
+            lines.append(str(r))
+    else:
+        lines.append(str(results))
+    return "\n".join(lines)
+
+
 def grid_levels(price: float, support: Optional[float] = None, resistance: Optional[float] = None, grids: int = 10):
     if support is None or resistance is None or resistance <= support:
         support = price * 0.95
@@ -1760,7 +1812,8 @@ async def research_run(update_obj, context: ContextTypes.DEFAULT_TYPE, mode: str
             waiting_msg = await update_obj.reply_text(f"⏳ Running research ({mode})...")
 
         results = []
-        for coin in TOP_COINS:
+        candidates = filter_research_coins(mode=mode, top_n=25)
+        for coin in candidates:
             df = get_ohlc_okx(coin, bar="1H", limit=200)
             if df.empty or len(df) < 30:
                 logger.warning(f"Dataframe rỗng cho {coin} (1H). Bỏ qua.")
@@ -1771,15 +1824,15 @@ async def research_run(update_obj, context: ContextTypes.DEFAULT_TYPE, mode: str
         text = "📊 Research results:\\n\\n" + ("\\n".join(results) if results else "❌ Không có dữ liệu để phân tích.")
         # reply or edit back to menu
         if hasattr(update_obj, "edit_message_text"):
-            await update_obj.edit_message_text(text, reply_markup=main_menu(update_obj.from_user.id))
+            await update_obj.edit_message_text(text, reply_markup=main_menu(update_obj))
         else:
-            await update_obj.reply_text(text, reply_markup=main_menu(update_obj.from_user.id))
+            await update_obj.reply_text(text, reply_markup=main_menu(update_obj))
     except Exception as e:
         logger.exception(f"research_run error: {e}")
         if hasattr(update_obj, "edit_message_text"):
-            await update_obj.edit_message_text("❌ Research gặp lỗi.", reply_markup=main_menu(update_obj.from_user.id))
+            await update_obj.edit_message_text("❌ Research gặp lỗi.", reply_markup=main_menu(update_obj))
         else:
-            await update_obj.reply_text("❌ Research gặp lỗi.", reply_markup=main_menu(update_obj.from_user.id))
+            await update_obj.reply_text("❌ Research gặp lỗi.", reply_markup=main_menu(update_obj))
 
 async def research_callback_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # helper to call research_run with callback_query.message as target for editing
@@ -1795,19 +1848,14 @@ async def research_long_short_handler(update: Update, context: ContextTypes.DEFA
         await research_run(update.message, context, mode="long")
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"📩 Received callback: {update.callback_query.data}")
     query = update.callback_query
-    if not query:
-        return
-
     data = query.data
-    chat_id = update.effective_chat.id
-    logger.info(f"📩 Received callback: {data}")
+    chat_id = update.effective_chat.id   # lấy chat id
 
-    # Research specific coin/timeframe
     if data.startswith("research:"):
         _, symbol, mode = data.split(":")
         await research_handler(update, context, symbol=symbol, mode=mode)
-        return
 
     if data == "main":
         await query.edit_message_text("🏠 Menu", reply_markup=main_menu(update.effective_user.id))
@@ -1816,53 +1864,45 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("topcoins:"):
         page = int(data.split(":")[1])
         await safe_edit(query.message, text="🔥 Top Coins theo thanh khoản:", reply_markup=coins_page_markup(page))
-        return
 
     elif data.startswith("coin:"):
         coin = data.split(":")[1]
         price = MARKET_MAP.get(coin, {}).get("current_price")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
-        txt = f"🔎 {coin}\nGiá: {price} USDT\nThanh khoản 24h: ~{volq:,.0f} USDT"
+        txt = f"🔎 {coin}\\nGiá: {price} USDT\\nThanh khoản 24h: ~{volq:,.0f} USDT"
         await safe_send(context.bot, chat_id=chat_id, text=txt, reply_markup=coin_actions_markup(coin))
-        return
 
     elif data.startswith("chart:"):
         coin = data.split(":")[1]
         df = get_ohlc_okx(coin, bar="1D", limit=200)
         buf = create_price_chart(df, coin)
         await context.bot.send_photo(chat_id=chat_id, photo=buf, caption=f"📊 {coin} - 1D")
-        return
 
     elif data.startswith("ind:"):
         coin = data.split(":")[1]
         df = get_ohlc_okx(coin, bar="1H", limit=200)
         _, inds = compute_trend_score(df, mode="long")
         if not inds:
-            await safe_send(context.bot, chat_id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
+            await safe_send(context.bot,chat_id=chat_id, text="Không đủ dữ liệu.", reply_markup=coin_actions_markup(coin))
             return
-        text = (
-            f"📋 {coin} (1H):\n"
-            f"- Close: {inds.get('latest_close')}\n"
-            f"- RSI: {inds.get('rsi')}\n"
-            f"- EMA12/26: {inds.get('ema12')}/{inds.get('ema26')}\n"
-            f"- MACD/MACDs: {inds.get('macd')}/{inds.get('macd_signal')}\n"
-            f"- ADX: {inds.get('adx')}\n"
-            f"- Signal: {inds.get('signal')}\n"
-        )
-        await safe_send(context.bot, chat_id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
-        return
+        text = (f"📋 {coin} (1H):\n"
+                f"- Close: {inds.get('latest_close')}\n"
+                f"- RSI: {inds.get('rsi')}\n"
+                f"- EMA12/26: {inds.get('ema12')}/{inds.get('ema26')}\n"
+                f"- MACD/MACDs: {inds.get('macd')}/{inds.get('macd_signal')}\n"
+                f"- ADX: {inds.get('adx')}\n"
+                f"- Signal: {inds.get('signal')}\n")
+        await safe_send(context.bot,chat_id=chat_id, text=text, reply_markup=coin_actions_markup(coin))
 
     elif data.startswith("ai:"):
         coin = data.split(":")[1]
         avg, details = multi_tf_score(coin, mode="long")
         volq = MARKET_MAP.get(coin, {}).get("vol_quote_24h", 0)
         ai_text = ai_analysis(coin, details, volq, "long")
-        await safe_send(context.bot, chat_id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
-        return
+        await safe_send(context.bot,chat_id=chat_id, text=ai_text, reply_markup=coin_actions_markup(coin))
 
     elif data == "back_coins":
-        await safe_send(context.bot, chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
-        return
+        await safe_send(context.bot,chat_id=chat_id, text="📊 Top Coins (select):", reply_markup=coins_page_markup(0))
 
     elif data == "toggle_alert":
         user_id = update.effective_user.id
@@ -1872,53 +1912,58 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text="🏠 Menu",
             reply_markup=main_menu(user_id)
         )
-        return
 
-    elif data in ("research_long", "research_short"):
+    if data in ("research_long", "research_short"):
         await research_callback_wrapper(update, context)
         return
-
-    elif data == "research_btn":
+		
+    if data == "research_btn":
         await query.edit_message_text("🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
         return
-
+		
     elif data == "news_market_menu":
         news_list = get_news_today(limit=10)
-        text = "📰 Tin tức hôm nay:\n\n" + "\n\n".join(news_list)
+        text = "📰 Tin tức hôm nay:\n\n"  "\n\n".join(news_list)
         await query.message.reply_text(text)
-        return
 
     elif data.startswith("news_menu:"):
         coin = data.split(":")[1]
-        await safe_edit(query.message, "📰 Chọn loại tin tức:", reply_markup=news_menu_markup(coin))
-        return
+        await safe_edit(update.callback_query.message, "📰 Chọn loại tin tức:", reply_markup=news_menu_markup(coin))
 
     elif data.startswith("news_market:"):
         coin = data.split(":")[1]
         news_list = get_news_general()
-        news_text = "📰 Tin tức thị trường:\n\n" + "\n\n".join(news_list)
-        await safe_send(context.bot, chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
-        return
+        news_text = "📰 Tin tức thị trường:\n\n"  "\n\n".join(news_list)
+        await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
     elif data.startswith("news_coin:"):
         coin = data.split(":")[1]
         news_list = get_news_coin(coin)
-        news_text = f"💡 Tin tức về {coin}:\n\n" + "\n\n".join(news_list)
-        await safe_send(context.bot, chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+        news_text = f"💡 Tin tức về {coin}:\n\n"  "\n\n".join(news_list)
+        await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
+
+    if data == "research_long":
+        await research_handler(update, context, mode="long")
+
+    elif data == "research_short":
+        await research_handler(update, context, mode="short")
+    
+    if data == "bot_dca_btn":
+        # show dca options; for demo we only have bull option
+        kb = [[InlineKeyboardButton("Bull (only)", callback_data="bot_dca_bull")],
+              [InlineKeyboardButton("🔙 Back", callback_data="main")]]
+        await query.edit_message_text("Chọn chế độ lọc Bot DCA:", reply_markup=InlineKeyboardMarkup(kb))
         return
 
-    elif data == "bot_dca_btn":
-        await query.edit_message_text("Chọn chế độ lọc Bot DCA:", reply_markup=bot_dca_menu())
-        return
-
-    elif data == "bot_dca_bull":
+    if data == "bot_dca_bull":
         await research_dca_handler(update, context)
         return
 
     elif data.startswith("dca:"):
         coin = data.split(":")[1]
+        # recompute quickly
         df = get_ohlc_okx(coin, bar="1H", limit=200)
-        price = float(df.iloc[-1]["close"]) if not df.empty else MARKET_MAP.get(coin, {}).get("current_price", 0)
+        price = float(df.iloc[-1]["close"]) if not df.empty else MARKET_MAP.get(coin,{}).get("current_price",0)
         res, sup = compute_support_resistance(df, window=90)
         d15 = dca_levels(price, 15, 0.15)
         d20 = dca_levels(price, 20, 0.18)
@@ -1936,7 +1981,21 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{' | '.join(f'{x:.6f}' for x in grid10)}\n"
         )
         await safe_send(context.bot, chat_id=chat_id, text=text, parse_mode="HTML")
-        return
+
+    elif data.startswith("chart:"):
+        coin = data.split(":", 1)[1]
+        await chart_handler(update, context, coin)
+
+    elif data.startswith("ind:"):
+        coin = data.split(":", 1)[1]
+        await indicators_handler(update, context, coin)
+
+    elif data.startswith("ai:"):
+        coin = data.split(":", 1)[1]
+        await ai_analysis(update, context, coin)
+
+    elif data == "news_market_menu" or data.startswith("news_market"):
+        await news_market_handler(update, context)
 
     if data == "news_more":
         batch, has_more = get_news_batch(15)
@@ -1948,7 +2007,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if has_more:
             buttons.append([InlineKeyboardButton("📩 Xem thêm tin tức", callback_data="news_more")])
         await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True)
-        return
 
     if data.startswith("news:"):
         await news_page_handler(update, context)
@@ -1956,7 +2014,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # fallback
     await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update.effective_user.id))
-
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
@@ -2154,7 +2211,8 @@ async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         # show processing
         await query.edit_message_text("⏳ Scanning for Bot DCA candidates... (demo top coins)")
         results = []
-        for coin in TOP_COINS:
+        candidates = filter_dca_candidates(TOP_COINS)
+        for coin in candidates:
             df1d = get_ohlc_okx(coin, bar="1D", limit=200)
             if df1d.empty or len(df1d) < 5:
                 logger.warning(f"No 1D data for {coin}, skip")
@@ -2172,10 +2230,10 @@ async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             cfg15 = suggest_dca_future(price, 15, support=sup)
             results.append(f"{coin} | price {price:.6f} | 24h {growth_24h:.2f}% | max_dd {cfg15.get('max_dd_pct','-')}%")
         text = dca_result_to_text(results)
-        await query.edit_message_text(text, reply_markup=main_menu(update_obj.from_user.id))
+        await query.edit_message_text(text, reply_markup=main_menu(query))
     except Exception as e:
         logger.exception(f"research_dca_handler error: {e}")
-        await query.edit_message_text("❌ Bot DCA gặp lỗi.", reply_markup=main_menu(update_obj.from_user.id))
+        await query.edit_message_text("❌ Bot DCA gặp lỗi.", reply_markup=main_menu(query))
 
 # News handlers: pagination via callback data news:{page}
 async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2203,7 +2261,7 @@ async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
     except Exception as e:
         logger.exception(f"news_page_handler error: {e}")
-        await query.edit_message_text("❌ Lỗi khi lấy tin tức.", reply_markup=main_menu(update_obj.from_user.id))
+        await query.edit_message_text("❌ Lỗi khi lấy tin tức.", reply_markup=main_menu(query))
 		
 async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
@@ -2417,6 +2475,56 @@ async def news_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------- Main startup ----------
+
+
+def compute_pct_change_24h(symbol: str) -> float | None:
+    """Compute approximate 24h percent change using 1D candles (last two closes)."""
+    try:
+        df = get_ohlc_okx(symbol, bar="1D", limit=3)
+        if df.empty or len(df) < 2:
+            return None
+        last = float(df.iloc[-1]["close"])
+        prev = float(df.iloc[-2]["close"])
+        return ((last - prev) / prev) * 100.0 if prev != 0 else None
+    except Exception:
+        return None
+
+def get_top_coins(limit: int = 20) -> list:
+    """Return top coins sorted by 24h percent change (desc). If percent change unavailable, fallback to vol."""
+    lst = []
+    for sym, info in MARKET_MAP.items():
+        pct = info.get('pct_change_24h')
+        if pct is None:
+            pct = compute_pct_change_24h(sym) or 0.0
+        lst.append((sym, pct, info.get('vol_quote_24h', 0)))
+    lst.sort(key=lambda x: (x[1], x[2]), reverse=True)
+    return [x[0] for x in lst[:limit]]
+
+
+def filter_research_coins(mode: str = "long", top_n: int = 15) -> list:
+    """Return list of top_n symbols that have high liquidity and clear trend for given mode.
+    Mode: 'long' or 'short'
+    """
+    candidates = []
+    # ensure MARKET_MAP populated
+    for symbol, info in sorted(MARKET_MAP.items(), key=lambda kv: kv[1].get('vol_quote_24h', 0), reverse=True):
+        try:
+            volq = info.get('vol_quote_24h', 0)
+            if volq < MIN_QUOTE_VOL:
+                continue
+            df = get_ohlc_okx(symbol, bar='1H', limit=200)
+            if df.empty or len(df) < 30:
+                continue
+            score, details = compute_trend_score(df, mode=mode)
+            # accept if score strongly supports mode
+            if mode == 'long' and score >= 40:
+                candidates.append((symbol, score, volq))
+            elif mode == 'short' and score <= -40:
+                candidates.append((symbol, score, volq))
+        except Exception:
+            continue
+    candidates.sort(key=lambda x: (x[2], x[1]), reverse=True)
+    return [c[0] for c in candidates[:top_n]]
 def build_application() -> Application:
     app = Application.builder().token(TOKEN).build()
 
@@ -2466,16 +2574,21 @@ def main():
         drop_pending_updates=True,
     )
 
+
+
+def suggest_grid_future(price: float, support: float = None, resistance: float = None, grids: int = 10):
+    """Wrapper returning structured grid suggestion used by other code.
+    Returns dict with keys grid_levels, grid_step_pct, support, resistance
+    """
+    levels = grid_levels(price, support=support, resistance=resistance, grids=grids)
+    step_pct = 0.0
+    if len(levels) >= 2 and levels[0] > 0:
+        step_pct = (levels[1] - levels[0]) / levels[0] * 100.0
+    return {
+        'grid_levels': levels,
+        'grid_step_pct': round(step_pct, 4),
+        'support': round(levels[0], 8) if levels else None,
+        'resistance': round(levels[-1], 8) if levels else None
+    }
 if __name__ == "__main__":
     main()
-
-def dca_result_to_text(results: Dict[str, Any]) -> str:
-    """
-    Chuyển kết quả DCA thành chuỗi text để gửi cho user.
-    """
-    lines = ["📊 Kết quả DCA:"]
-    for symbol, data in results.items():
-        roi = data.get('roi', 0)
-        avg_entry = data.get('avg_entry', 0)
-        lines.append(f"{symbol}: ROI={roi:.2f}% | Avg Entry={avg_entry}")
-    return "\n".join(lines)

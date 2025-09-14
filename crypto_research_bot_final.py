@@ -34,7 +34,6 @@ import json
 import socketserver
 import http.server
 import httpx
-from typing import List, Dict, Any, Optional, Tuple
 
 
 from dotenv import load_dotenv
@@ -219,9 +218,6 @@ LAST_ALERT_TIME = {}
 last_sent = None
 
 alerts = {}
-
-NEWS_FETCH_LIMIT = 20   # số tin fetch mặc định
-NEWS_PAGE_SIZE = 5      # số tin mỗi trang khi phân trang menu
 
 # ================== TELEGRAM UI  =====================
 def main_menu(user_id: int) -> InlineKeyboardMarkup:
@@ -470,9 +466,10 @@ def check_liquidity_strength(df):
         return False, f"⚠️ Lỗi khi check thanh khoản: {e}"
 
 
-async def error_handler(update, context):
-    logger.error("Update %s gây lỗi %s", update, context.error)
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logging.error(msg="Exception while handling update:", exc_info=context.error)
 app.add_error_handler(error_handler)
+
 
 from telegram import BotCommand
 
@@ -1114,6 +1111,8 @@ LAST_NEWS_FETCH = None
 NEWS_CACHE_TTL = dt.timedelta(minutes=35) 
 NEWS_BUFFER = []   # hàng đợi tin còn lại chưa gửi
 LAST_NEWS_IDS = set()  # để tránh gửi trùng
+NEWS_FETCH_LIMIT = 20
+NEWS_PAGE_SIZE = 5
 
 def fetch_all_news(limit: int = NEWS_FETCH_LIMIT) -> List[str]:
     items: List[str] = []
@@ -1195,6 +1194,8 @@ def get_news_page(page: int = 0, page_size: int = NEWS_PAGE_SIZE) -> Tuple[List[
     has_more = end < total
     return items, has_more, total_pages
 
+def get_news_today(limit: int = 10) -> List[str]:
+    return fetch_all_news(limit=limit)
 
 # ================== TECHNICALS ==================
 def _indicators(df: pd.DataFrame):
@@ -1246,7 +1247,7 @@ def _indicators(df: pd.DataFrame):
     }
     return out
 
-def multi_tf_score(symbol: str, mode: str = "long") -> tuple[float, dict]:
+def multi_tf_score(symbol: str, mode: str = "long") -> Tuple[float, Dict[str, Any]]:
     """
     Compute average trend score across multiple timeframes.
     Returns (avg_score, details_per_tf)
@@ -1770,15 +1771,15 @@ async def research_run(update_obj, context: ContextTypes.DEFAULT_TYPE, mode: str
         text = "📊 Research results:\\n\\n" + ("\\n".join(results) if results else "❌ Không có dữ liệu để phân tích.")
         # reply or edit back to menu
         if hasattr(update_obj, "edit_message_text"):
-            await update_obj.edit_message_text(text, reply_markup=main_menu_markup())
+            await update_obj.edit_message_text(text, reply_markup=main_menu(update.effective_user.id))
         else:
-            await update_obj.reply_text(text, reply_markup=main_menu_markup())
+            await update_obj.reply_text(text, reply_markup=main_menu(update.effective_user.id))
     except Exception as e:
         logger.exception(f"research_run error: {e}")
         if hasattr(update_obj, "edit_message_text"):
-            await update_obj.edit_message_text("❌ Research gặp lỗi.", reply_markup=main_menu_markup())
+            await update_obj.edit_message_text("❌ Research gặp lỗi.", reply_markup=main_menu(update.effective_user.id))
         else:
-            await update_obj.reply_text("❌ Research gặp lỗi.", reply_markup=main_menu_markup())
+            await update_obj.reply_text("❌ Research gặp lỗi.", reply_markup=main_menu(update.effective_user.id))
 
 async def research_callback_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # helper to call research_run with callback_query.message as target for editing
@@ -1804,7 +1805,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await research_handler(update, context, symbol=symbol, mode=mode)
 
     if data == "main":
-        await query.edit_message_text("🏠 Menu", reply_markup=main_menu_markup())
+        await query.edit_message_text("🏠 Menu", reply_markup=main_menu(update.effective_user.id))
         return
 
     elif data.startswith("topcoins:"):
@@ -1959,7 +1960,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # fallback
-    await query.edit_message_text("❓ Unknown action", reply_markup=main_menu_markup())
+    await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update.effective_user.id))
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
@@ -2175,10 +2176,10 @@ async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             cfg15 = suggest_dca_future(price, 15, support=sup)
             results.append(f"{coin} | price {price:.6f} | 24h {growth_24h:.2f}% | max_dd {cfg15.get('max_dd_pct','-')}%")
         text = dca_result_to_text(results)
-        await query.edit_message_text(text, reply_markup=main_menu_markup())
+        await query.edit_message_text(text, reply_markup=main_menu(update.effective_user.id))
     except Exception as e:
         logger.exception(f"research_dca_handler error: {e}")
-        await query.edit_message_text("❌ Bot DCA gặp lỗi.", reply_markup=main_menu_markup())
+        await query.edit_message_text("❌ Bot DCA gặp lỗi.", reply_markup=main_menu(update.effective_user.id))
 
 # News handlers: pagination via callback data news:{page}
 async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2206,7 +2207,7 @@ async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
     except Exception as e:
         logger.exception(f"news_page_handler error: {e}")
-        await query.edit_message_text("❌ Lỗi khi lấy tin tức.", reply_markup=main_menu_markup())
+        await query.edit_message_text("❌ Lỗi khi lấy tin tức.", reply_markup=main_menu(update.effective_user.id))
 		
 async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()

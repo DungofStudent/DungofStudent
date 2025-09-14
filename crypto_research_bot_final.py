@@ -220,38 +220,22 @@ last_sent = None
 alerts = {}
 
 # ================== TELEGRAM UI  =====================
-def main_menu(user_id=None) -> InlineKeyboardMarkup:
-    """
-    main_menu can accept either an int user_id or an update-like object.
-    It will attempt to extract an integer user id in a few common ways.
-    """
-    # normalize user_id
-    try:
-        if isinstance(user_id, int):
-            uid = user_id
-        elif hasattr(user_id, 'effective_user') and getattr(user_id, 'effective_user') is not None:
-            uid = user_id.effective_user.id
-        elif hasattr(user_id, 'from_user') and getattr(user_id, 'from_user') is not None:
-            uid = user_id.from_user.id
-        else:
-            uid = 0
-    except Exception:
-        uid = 0
-    is_alert_on = alerts.get(uid, False)
-    buttons = [
+def main_menu(update: Update):
+    keyboard = [
         [
-            InlineKeyboardButton("🔎 Research", callback_data="research_btn"),
-            InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_btn")
+            InlineKeyboardButton("🔎 Research Long", callback_data="research_long"),
+            InlineKeyboardButton("🔎 Research Short", callback_data="research_short"),
         ],
         [
+            InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_bull"),
             InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0"),
-            InlineKeyboardButton("📰 Tin tức", callback_data="news_market_menu")
         ],
         [
-            InlineKeyboardButton(f"{'✅' if is_alert_on else '❌'} Alerts", callback_data="toggle_alert")
+            InlineKeyboardButton("📰 Tin tức", callback_data="news"),
+            InlineKeyboardButton("❌ Alerts", callback_data="alerts"),
         ]
     ]
-    return InlineKeyboardMarkup(buttons)
+    return InlineKeyboardMarkup(keyboard)
 
 def research_choice_markup() -> InlineKeyboardMarkup:
     """
@@ -1801,52 +1785,6 @@ async def reset_webhook(app: Application):
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Received /start from user {update.effective_user.id if update.effective_user else 'unknown'}")
     await update.message.reply_text("👋 Crypto Research Bot", reply_markup=main_menu(update.effective_user.id))
-
-async def research_run(update_obj, context: ContextTypes.DEFAULT_TYPE, mode: str = "long"):
-    """Run research scanning TOP_COINS; update_obj may be callback_query or message object (for flexibility)."""
-    try:
-        # prepare UI: if callback_query, edit message; if message, send new message
-        if hasattr(update_obj, "edit_message_text"):
-            waiting_msg = await update_obj.edit_message_text(f"⏳ Running research ({mode})...")
-        else:
-            waiting_msg = await update_obj.reply_text(f"⏳ Running research ({mode})...")
-
-        results = []
-        candidates = filter_research_coins(mode=mode, top_n=25)
-        for coin in candidates:
-            df = get_ohlc_okx(coin, bar="1H", limit=200)
-            if df.empty or len(df) < 30:
-                logger.warning(f"Dataframe rỗng cho {coin} (1H). Bỏ qua.")
-                continue
-            score, details = compute_trend_score(df, mode=mode)
-            results.append(f"{coin} | score {score} | RSI {details.get('rsi')} | trend {details.get('trend')}")
-
-        text = "📊 Research results:\\n\\n" + ("\\n".join(results) if results else "❌ Không có dữ liệu để phân tích.")
-        # reply or edit back to menu
-        if hasattr(update_obj, "edit_message_text"):
-            await update_obj.edit_message_text(text, reply_markup=main_menu(update_obj))
-        else:
-            await update_obj.reply_text(text, reply_markup=main_menu(update_obj))
-    except Exception as e:
-        logger.exception(f"research_run error: {e}")
-        if hasattr(update_obj, "edit_message_text"):
-            await update_obj.edit_message_text("❌ Research gặp lỗi.", reply_markup=main_menu(update_obj))
-        else:
-            await update_obj.reply_text("❌ Research gặp lỗi.", reply_markup=main_menu(update_obj))
-
-async def research_callback_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # helper to call research_run with callback_query.message as target for editing
-    query = update.callback_query
-    await query.answer()
-    await research_run(query, context, mode="long" if query.data == "research_long" else "short")
-
-async def research_long_short_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # if called by message (text), emulate long by default
-    if isinstance(update, Update) and update.callback_query:
-        await research_callback_wrapper(update, context)
-        return
-    else:
-        await research_run(update.message, context, mode="long")
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Received callback: {update.callback_query.data}")

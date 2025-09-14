@@ -59,6 +59,10 @@ logger = logging.getLogger(__name__)
 OKX_BASE = "https://www.okx.com"
 PROXY = None 
 
+NEWS_BUFFER: List[str] = []
+LAST_NEWS_FETCH: Optional[dt.datetime] = None
+SENT_NEWS_IDS = set()
+
 #=================== Hàm AI tóm tắt tin tức bằng Groq LLM==============
 from groq import Groq
 def ai_summarize(prompt: str) -> str:
@@ -121,7 +125,14 @@ PROXY = os.getenv("PROXY")
 proxies = {"http": PROXY, "https": PROXY} if PROXY else None
 # ================== GLOBAL STATE ==================
 COINS_LIST = []
-MARKET_MAP = {}   # key: "BTC-USDT", value: dict(info...)
+MARKET_MAP = {
+    "BTC-USDT": {"current_price": 30000.0, "vol_quote_24h": 500000000.0, "inst_id": "BTC-USDT"},
+    "ETH-USDT": {"current_price": 1800.0, "vol_quote_24h": 200000000.0, "inst_id": "ETH-USDT"},
+    "SATS-USDT": {"current_price": 0.0005, "vol_quote_24h": 15000000.0, "inst_id": "SATS-USDT"},
+    "PEPE-USDT": {"current_price": 0.0000012, "vol_quote_24h": 80000000.0, "inst_id": "PEPE-USDT"},
+    "SHIB-USDT": {"current_price": 0.00001, "vol_quote_24h": 50000000.0, "inst_id": "SHIB-USDT"},
+}
+TOP_COINS = list(MARKET_MAP.keys())
 PAGE_SIZE = 10
 PRICE_CACHE = {}
 LAST_ALERT = {}
@@ -345,44 +356,33 @@ def compute_support_resistance_from_df(df: pd.DataFrame, window: int = 90) -> (O
     except Exception:
         return None, None
 
-def compute_trend_score(df: pd.DataFrame, mode: str = "long") -> tuple[int, str]:
-    """
-    Trả về (score, trend_type)
-    trend_type = 'bullish' | 'bearish'
-    """
-    if df is None or len(df) < 50:
-        return 0, "neutral"
-
-    df = df.copy()
-    df["ema20"] = df["close"].ewm(span=20).mean()
-    df["ema50"] = df["close"].ewm(span=50).mean()
-
-    # RSI
-    delta = df["close"].diff()
-    gain = delta.where(delta > 0, 0).rolling(14).mean()
-    loss = -delta.where(delta < 0, 0).rolling(14).mean()
+def compute_trend_score(df: pd.DataFrame, mode: str = "long") -> Tuple[int, Dict[str, Any]]:
+    if df is None or df.empty or len(df) < 30:
+        return 0, {}
+    d = df.copy()
+    d["ema20"] = d["close"].ewm(span=20).mean()
+    d["ema50"] = d["close"].ewm(span=50).mean()
+    delta = d["close"].diff().fillna(0)
+    gain = delta.where(delta>0, 0).rolling(14).mean()
+    loss = -delta.where(delta<0, 0).rolling(14).mean()
     rs = gain / (loss + 1e-9)
-    df["rsi"] = 100 - (100 / (1 + rs))
-    last = df.iloc[-1]
+    d["rsi14"] = 100 - (100 / (1 + rs))
+    last = d.iloc[-1]
     score = 0
-
     if last["ema20"] > last["ema50"]:
-        score = 30
+        score += 30
     else:
         score -= 30
-
-    if mode == "long" and last["rsi"] > 55:
-        score = 30
-    elif mode == "short" and last["rsi"] < 45:
+    if last.get("rsi14", 50) > 55 and mode == "long":
+        score += 30
+    if last.get("rsi14", 50) < 45 and mode == "short":
         score -= 30
-
     if last["close"] > last["ema50"]:
-        score = 40
+        score += 20
     else:
-        score -= 40
-
-    trend_type = "bullish" if score >= 60 else "bearish" if score <= -60 else "neutral"
-    return score, trend_type
+        score -= 20
+    trend = "bullish" if score >= 40 else "bearish" if score <= -40 else "neutral"
+    return score, {"rsi": round(float(last.get("rsi14") or 0), 2), "trend": trend}
 
 def multi_tf_score(symbol: str, mode: str = "long") -> tuple[float, dict]:
     """
@@ -569,48 +569,47 @@ def okx_get_json(url: str, params: dict | None = None, timeout: int = 15, header
 
 
 
-def get_ohlc_okx(inst_id: str, bar: str = "1H", limit: int = 200) -> pd.DataFrame:
+def okx_public_get(path: str, params: dict = None, timeout: int = 10) -> Optional[dict]:
+    url = OKX_BASE.rstrip("/") + path
+    headers = {"User-Agent": "Mozilla/5.0 (CryptoResearchBot)"}
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        logger.warning(f"okx_public_get error {url}: {e}")
+        return None
+
+def get_ohlc_okx(symbol: str, bar: str = "1H", limit: int = 200) -> pd.DataFrame:
+    """
+    Fetch OHLC from OKX public /market/candles endpoint safely.
+    Returns chronological dataframe with columns: ts (datetime UTC), open, high, low, close, vol
+    If no data or error -> returns empty DataFrame.
+    """
     endpoint = "/api/v5/market/candles"
-    params = {"instId": inst_id, "bar": bar, "limit": limit}
-
-    # thử public API trước
-    j = okx_get_json(
-        OKX_BASE.rstrip("/") + endpoint,
-        params=params,
-        headers={"User-Agent": "Mozilla/5.0"}
-    )
-    data = j.get("data", []) if j else []
+    params = {"instId": symbol, "bar": bar, "limit": str(limit)}
+    j = okx_public_get(endpoint, params=params)
+    data = []
+    if j and isinstance(j, dict):
+        data = j.get("data") or []
     if not data:
-        logger.debug(f"Public candles empty for {inst_id} -> fallback signed")
-        j = okx_get_json_signed(endpoint, params=params, method="GET")
-        data = j.get("data", []) if j else []
-
-    if not data:
-        logger.warning(f"⚠️ Không có dữ liệu OHLC cho {inst_id} ({bar})")
+        logger.warning(f"⚠️ Không có dữ liệu OHLC cho {symbol} ({bar})")
         return pd.DataFrame()
 
-    # OKX trả data dạng [[ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm], ...]
-    df = pd.DataFrame(data, columns=[
-        "ts","open","high","low","close","vol","volCcy","volCcyQuote","confirm"
-    ])
-
-    # parse timestamp an toàn
     try:
-        # parse timestamp an toàn (convert sang int64 trước)
+        df = pd.DataFrame(data)
+        df = df.iloc[:, :6]
+        df.columns = ["ts", "open", "high", "low", "close", "vol"]
+        for c in ["open", "high", "low", "close", "vol"]:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        # parse ts robustly
         df["ts"] = pd.to_datetime(pd.to_numeric(df["ts"], errors="coerce"), unit="ms", utc=True)
-    except Exception:
-        df["ts"] = pd.to_datetime(df["ts"], utc=True, errors="coerce")
-
-    # convert số
-    numeric_cols = ["open", "high", "low", "close", "vol"]
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # đảo ngược để chronological (OKX trả mới → cũ)
-    df = df.iloc[::-1].reset_index(drop=True)
-
-    logger.info(f"✅ Nhận {len(df)} rows cho {inst_id} ({bar})")
-    return df
+        df = df.sort_values("ts").reset_index(drop=True)
+        logger.info(f"✅ Nhận {len(df)} rows cho {symbol} ({bar})")
+        return df
+    except Exception as e:
+        logger.exception(f"parse candles error for {symbol}: {e}")
+        return pd.DataFrame()
 
 def detect_flow_signals(coin: str):
     """
@@ -931,22 +930,20 @@ class HealthHandler(http.server.SimpleHTTPRequestHandler):
         else:
             self.send_error(404)
 
-def start_healthcheck_server(port=8081):
-    import http.server, socketserver
-
-    class HealthHandler(http.server.SimpleHTTPRequestHandler):
+def start_healthcheck_server(port: int = 8081):
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    class H(BaseHTTPRequestHandler):
         def do_GET(self):
-            if self.path == "/":
-                self.send_response(200)
-                self.send_header("Content-type", "text/plain")
-                self.end_headers()
-                self.wfile.write(b"Bot OKX is alive")
-            else:
-                self.send_error(404)
-
-    with socketserver.TCPServer(("", port), HealthHandler) as httpd:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"ok")
+    try:
+        server = HTTPServer(("0.0.0.0", port), H)
         logger.info(f"✅ Healthcheck server listening on {port}")
-        httpd.serve_forever()
+        server.serve_forever()
+    except Exception as e:
+        logger.warning(f"Healthcheck server error: {e}")
 
 # ================== FLOW DETECTION ==================
 async def detect_flow_signals_async(symbol: str, df: pd.DataFrame):
@@ -1111,71 +1108,85 @@ NEWS_CACHE_TTL = dt.timedelta(minutes=35)
 NEWS_BUFFER = []   # hàng đợi tin còn lại chưa gửi
 LAST_NEWS_IDS = set()  # để tránh gửi trùng
 
-def fetch_all_news(limit=50):
-    """Lấy nhiều nguồn tin, hợp nhất, bỏ trùng"""
-    news_items = []
+def fetch_all_news(limit: int = NEWS_FETCH_LIMIT) -> List[str]:
+    items: List[str] = []
+    # 1) CryptoPanic (if key present)
+    if CRYPTOPANIC_KEY:
+        try:
+            url = "https://cryptopanic.com/api/v1/posts/"
+            params = {"auth_token": CRYPTOPANIC_KEY, "filter": "hot"}
+            r = requests.get(url, params=params, timeout=10)
+            if r.status_code == 429:
+                logger.warning("CryptoPanic 429 - rate limited, will fallback")
+            else:
+                r.raise_for_status()
+                j = r.json()
+                for a in j.get("results", [])[:limit]:
+                    title = a.get("title") or ""
+                    link = a.get("url") or ""
+                    if title and link:
+                        nid = f"{title}|{link}"
+                        if nid not in SENT_NEWS_IDS:
+                            SENT_NEWS_IDS.add(nid)
+                            items.append(f"- {title}\\n🔗 {link}")
+        except Exception as e:
+            logger.warning(f"CryptoPanic error: {e}")
 
-    # 1. CryptoPanic
+    # 2) CoinStats
     try:
-        url = "https://cryptopanic.com/api/v1/posts/"
-        params = {"auth_token": CRYPTOPANIC_KEY, "filter": "hot"}
-        r = requests.get(url, params=params, timeout=15)
-        if r.status_code == 429:
-            logger.warning("CryptoPanic 429 - Retry sau 5s")
-            time.sleep(5)
-            r = requests.get(url, params=params, timeout=15)
+        r = requests.get("https://api.coinstats.app/public/v1/news", params={"skip": 0, "limit": limit}, timeout=10)
         r.raise_for_status()
-        j = r.json()
-        for a in j.get("results", []):
-            title, link = a.get("title"), a.get("url")
+        js = r.json()
+        for a in js.get("news", []):
+            title = a.get("title") or ""
+            link = a.get("link") or ""
             if title and link:
-                news_items.append((title, link))
+                nid = f"{title}|{link}"
+                if nid not in SENT_NEWS_IDS:
+                    SENT_NEWS_IDS.add(nid)
+                    items.append(f"- {title}\\n🔗 {link}")
     except Exception as e:
-        logger.warning(f"⚠️ CryptoPanic error: {e}")
+        logger.warning(f"CoinStats error: {e}")
 
-    # 2. CoinStats
+    # 3) CryptoCompare fallback
     try:
-        r = requests.get("https://api.coinstats.app/public/v1/news", params={"skip": 0, "limit": limit}, timeout=15)
-        j = r.json()
-        for a in j.get("news", []):
-            news_items.append((a.get("title"), a.get("link")))
+        r = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN", timeout=10)
+        r.raise_for_status()
+        js = r.json()
+        for a in js.get("Data", [])[:limit]:
+            title = a.get("title") or ""
+            link = a.get("url") or ""
+            if title and link:
+                nid = f"{title}|{link}"
+                if nid not in SENT_NEWS_IDS:
+                    SENT_NEWS_IDS.add(nid)
+                    items.append(f"- {title}\\n🔗 {link}")
     except Exception as e:
-        logger.warning(f"⚠️ CoinStats error: {e}")
+        logger.warning(f"CryptoCompare error: {e}")
 
-    # 3. CryptoCompare
-    try:
-        r = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN", timeout=15)
-        j = r.json()
-        for a in j.get("Data", []):
-            news_items.append((a.get("title"), a.get("url")))
-    except Exception as e:
-        logger.warning(f"⚠️ CryptoCompare error: {e}")
+    return items[:limit]
 
-    # lọc trùng
-    clean_items = []
-    seen = set()
-    for title, link in news_items:
-        if not title or not link:
-            continue
-        nid = f"{title}|{link}"
-        if nid not in seen and nid not in LAST_NEWS_IDS:
-            seen.add(nid)
-            LAST_NEWS_IDS.add(nid)
-            clean_items.append(f"- {title}\n🔗 {link}")
 
-    return clean_items[:limit]
-
-def get_news_batch(batch_size=15):
-    """Lấy batch tin tức từ buffer, refill khi cần"""
+def ensure_news_buffer():
     global NEWS_BUFFER, LAST_NEWS_FETCH
+    now = dt.datetime.utcnow()
+    if NEWS_BUFFER and LAST_NEWS_FETCH and (now - LAST_NEWS_FETCH) < NEWS_CACHE_TTL:
+        return
+    NEWS_BUFFER = fetch_all_news(limit=NEWS_FETCH_LIMIT)
+    LAST_NEWS_FETCH = now
 
-    if not NEWS_BUFFER:  # refill
-        NEWS_BUFFER = fetch_all_news(limit=50)
-
-    batch = NEWS_BUFFER[:batch_size]
-    NEWS_BUFFER = NEWS_BUFFER[batch_size:]
-
-    return batch, bool(NEWS_BUFFER)  # trả về batch và cờ còn tin chưa đọc
+def get_news_page(page: int = 0, page_size: int = NEWS_PAGE_SIZE) -> Tuple[List[str], bool, int]:
+    ensure_news_buffer()
+    total = len(NEWS_BUFFER)
+    if total == 0:
+        return (["Không tìm thấy tin tức."], False, 1)
+    total_pages = (total + page_size - 1) // page_size
+    page = max(0, min(page, total_pages - 1))
+    start = page * page_size
+    end = start + page_size
+    items = NEWS_BUFFER[start:end]
+    has_more = end < total
+    return items, has_more, total_pages
 
 
 # ================== TECHNICALS ==================
@@ -1289,62 +1300,18 @@ def suggest_entry(inds: dict, price: float, support: Optional[float], resistance
     else:
         return "Hold (neutral)"
 
-def suggest_dca_future(price: float, num_orders: int, support: Optional[float] = None, resistance: Optional[float] = None, direction: str = "long"):
-    """
-    Gợi ý các mức DCA cho giao dịch futures.
-    - price: Giá hiện tại của tài sản.
-    - num_orders: Số lượng lệnh an toàn.
-    - support: Mức giá hỗ trợ (tùy chọn).
-    - resistance: Mức giá kháng cự (tùy chọn).
-    - direction: Hướng giao dịch ("long" hoặc "short").
-    Trả về dict chứa cấu hình DCA.
-    """
-    if not price or price <= 0:
+def suggest_dca_future(price: float, num_orders: int, support: Optional[float] = None) -> Dict[str, Any]:
+    if not price or price <= 0 or num_orders <= 0:
         return {}
-    if num_orders <= 0:
-        return {}
-
-    leverage = 2  # Đòn bẩy mặc định x2
-    tp_pct = 0.37  # Tỷ lệ chốt lời (%)
-
-    # Fallback cho support/resistance nếu không được cung cấp hoặc không hợp lệ
-    if direction == "long" and (support is None or support <= 0):
-        support = price * 0.95  # Giả định hỗ trợ thấp hơn 5% giá hiện tại
-    elif direction == "short" and (resistance is None or resistance <= 0):
-        resistance = price * 1.05  # Giả định kháng cự cao hơn 5% giá hiện tại
-
-    # Tính tỷ lệ drawdown tối đa (%)
-    max_dd_pct = 0.0
-    if direction == "long" and support and support < price:
-        max_dd_pct = ((price - support) / price) * 100.0
-    elif direction == "short" and resistance and resistance > price:
-        max_dd_pct = ((resistance - price) / price) * 100.0
-    else:
-        max_dd_pct = 15.0  # Giả định drawdown mặc định nếu không có support/resistance
-
+    if support is None or support <= 0 or support >= price:
+        support = price * 0.85  # fallback assume 15% down to support
+    max_dd_pct = ((price - support) / price) * 100.0
     avg_step_pct = max_dd_pct / num_orders if num_orders > 0 else 0.0
-
     steps = []
     for i in range(num_orders):
-        if direction == "long":
-            entry_price = price * (1 - avg_step_pct / 100 * i)  # Giảm dần cho long
-        else:  # direction == "short"
-            entry_price = price * (1 + avg_step_pct / 100 * i)  # Tăng dần cho short
-        steps.append({
-            "order": i + 1,
-            "price": round(entry_price, 6),
-            "step_pct": round(avg_step_pct, 4)
-        })
-
-    return {
-        "type": f"DCA Future ({num_orders} lệnh an toàn)",
-        "price_now": round(price, 6),
-        "tp_pct": tp_pct,
-        "leverage": leverage,
-        "avg_step_pct": round(avg_step_pct, 4),
-        "max_drawdown_pct": round(max_dd_pct, 2),
-        "steps": steps
-    }
+        entry = price * (1 - avg_step_pct / 100 * (i + 1))
+        steps.append(round(entry, 6))
+    return {"price_now": price, "max_dd_pct": round(max_dd_pct, 2), "steps": steps, "avg_step_pct": round(avg_step_pct, 4)}
 
 def grid_levels(price: float, support: Optional[float] = None, resistance: Optional[float] = None, grids: int = 10):
     if support is None or resistance is None or resistance <= support:
@@ -1772,23 +1739,52 @@ async def reset_webhook(app: Application):
 
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"📩 Received /start from user {update.effective_user.id}")
-    refresh_markets(MAX_SCAN)
-    user_id = update.effective_user.id
+    logger.info(f"📩 Received /start from user {update.effective_user.id if update.effective_user else 'unknown'}")
+    await update.message.reply_text("👋 Crypto Research Bot", reply_markup=main_menu_markup())
 
-    # ReplyKeyboard (cố định dưới chat)
-    keyboard = [
-        ["🔍 Research", "🤖 Bot DCA"],
-        ["📊 Top Coins", "📰 Tin tức"],
-        ["❌ Alerts"]
-    ]
-    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+async def research_run(update_obj, context: ContextTypes.DEFAULT_TYPE, mode: str = "long"):
+    """Run research scanning TOP_COINS; update_obj may be callback_query or message object (for flexibility)."""
+    try:
+        # prepare UI: if callback_query, edit message; if message, send new message
+        if hasattr(update_obj, "edit_message_text"):
+            waiting_msg = await update_obj.edit_message_text(f"⏳ Running research ({mode})...")
+        else:
+            waiting_msg = await update_obj.reply_text(f"⏳ Running research ({mode})...")
 
-    await update.message.reply_text(
-        "👋 Crypto Research Bot (OKX • Liquidity & Trend)",
-        reply_markup=reply_markup
-    )
+        results = []
+        for coin in TOP_COINS:
+            df = get_ohlc_okx(coin, bar="1H", limit=200)
+            if df.empty or len(df) < 30:
+                logger.warning(f"Dataframe rỗng cho {coin} (1H). Bỏ qua.")
+                continue
+            score, details = compute_trend_score(df, mode=mode)
+            results.append(f"{coin} | score {score} | RSI {details.get('rsi')} | trend {details.get('trend')}")
 
+        text = "📊 Research results:\\n\\n" + ("\\n".join(results) if results else "❌ Không có dữ liệu để phân tích.")
+        # reply or edit back to menu
+        if hasattr(update_obj, "edit_message_text"):
+            await update_obj.edit_message_text(text, reply_markup=main_menu_markup())
+        else:
+            await update_obj.reply_text(text, reply_markup=main_menu_markup())
+    except Exception as e:
+        logger.exception(f"research_run error: {e}")
+        if hasattr(update_obj, "edit_message_text"):
+            await update_obj.edit_message_text("❌ Research gặp lỗi.", reply_markup=main_menu_markup())
+        else:
+            await update_obj.reply_text("❌ Research gặp lỗi.", reply_markup=main_menu_markup())
+
+async def research_callback_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # helper to call research_run with callback_query.message as target for editing
+    query = update.callback_query
+    await query.answer()
+    await research_run(query, context, mode="long" if query.data == "research_long" else "short")
+
+async def research_long_short_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # if called by message (text), emulate long by default
+    if isinstance(update, Update) and update.callback_query:
+        await research_callback_wrapper(update, context)
+    else:
+        await research_run(update.message, context, mode="long")
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Received callback: {update.callback_query.data}")
@@ -1801,8 +1797,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await research_handler(update, context, symbol=symbol, mode=mode)
 
     if data == "main":
-        user_id = update.effective_user.id
-        await safe_edit(query.message, text="🏠 Menu", reply_markup=main_menu(user_id))
+        await query.edit_message_text("🏠 Menu", reply_markup=main_menu_markup())
+        return
 
     elif data.startswith("topcoins:"):
         page = int(data.split(":")[1])
@@ -1856,8 +1852,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=main_menu(user_id)
         )
 
-    elif data == "research_btn":
-        await safe_edit(update.callback_query.message, text="🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
+    if data in ("research_long", "research_short"):
+        await research_callback_wrapper(update, context)
+        return
+		
+    if data == "research_btn":
+        await query.edit_message_text("🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
+        return
 		
     elif data == "news_market_menu":
         news_list = get_news_today(limit=10)
@@ -1886,14 +1887,16 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "research_short":
         await research_handler(update, context, mode="short")
     
-    elif data == "bot_dca_btn":
-        # only Bull option (user requested removal of bear/all)
-        await update.callback_query.message.edit_text(
-            "Chọn chế độ lọc Bot DCA: (chỉ Bull)",
-            reply_markup=bot_dca_menu()
-        )
-    elif data == "bot_dca_bull":
-        await research_dca_bot(update, context, mode="bull")
+    if data == "bot_dca_btn":
+        # show dca options; for demo we only have bull option
+        kb = [[InlineKeyboardButton("Bull (only)", callback_data="bot_dca_bull")],
+              [InlineKeyboardButton("🔙 Back", callback_data="main")]]
+        await query.edit_message_text("Chọn chế độ lọc Bot DCA:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    if data == "bot_dca_bull":
+        await research_dca_handler(update, context)
+        return
 
     elif data.startswith("dca:"):
         coin = data.split(":")[1]
@@ -1943,6 +1946,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if has_more:
             buttons.append([InlineKeyboardButton("📩 Xem thêm tin tức", callback_data="news_more")])
         await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True)
+
+    if data.startswith("news:"):
+        await news_page_handler(update, context)
+        return
+
+    # fallback
+    await query.edit_message_text("❓ Unknown action", reply_markup=main_menu_markup())
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
@@ -2134,96 +2144,63 @@ async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, m
     )
 
 async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"📩 Received /research_dca with args: {context.args}")
-    chat_id = update.effective_chat.id
-    await safe_send(context.bot, chat_id=chat_id, text="🤖 Đang quét coins đủ điều kiện tạo bot DCA...")
-
-    refresh_markets(MAX_SCAN)
-    liquid_syms = [c for c in COINS_LIST if MARKET_MAP.get(c, {}).get("vol_quote_24h", 0) >= MIN_QUOTE_VOL]
-    liquid_syms = sorted(liquid_syms, key=lambda c: MARKET_MAP[c]["vol_quote_24h"], reverse=True)[:100]
-# lọc theo điều kiện DCA
-    candidates = filter_dca_candidates(liquid_syms)
-	
-    results = []
-    for cid in liquid_syms:
-        try:
-            # --- Lọc theo điều kiện DCA ---
-            if not is_new_coin(cid):
+    query = update.callback_query
+    await query.answer()
+    try:
+        # show processing
+        await query.edit_message_text("⏳ Scanning for Bot DCA candidates... (demo top coins)")
+        results = []
+        for coin in TOP_COINS:
+            df1d = get_ohlc_okx(coin, bar="1D", limit=200)
+            if df1d.empty or len(df1d) < 5:
+                logger.warning(f"No 1D data for {coin}, skip")
                 continue
-            funding = get_funding_rate(cid)
-            if funding is None or funding >= 0:   # cần funding âm
+            price = float(df1d.iloc[-1]["close"])
+            # simple filter: 24h growth > 2%
+            try:
+                prev = float(df1d.iloc[-2]["close"])
+                growth_24h = ((price - prev) / prev) * 100 if prev != 0 else 0.0
+            except Exception:
+                growth_24h = 0.0
+            if growth_24h < 2.0:
                 continue
-            df1h = get_ohlc_okx(cid, bar="1H", limit=200)
-            growth = percent_change_over_period(df1h, lookback=24) or 0.0
-            if growth < 10:   # yêu cầu tăng trưởng mạnh > 10%/24h
-                continue
+            sup = float(df1d["low"].tail(90).min()) if len(df1d) >= 90 else float(df1d["low"].min())
+            cfg15 = suggest_dca_future(price, 15, support=sup)
+            results.append(f"{coin} | price {price:.6f} | 24h {growth_24h:.2f}% | max_dd {cfg15.get('max_dd_pct','-')}%")
+        text = dca_result_to_text(results)
+        await query.edit_message_text(text, reply_markup=main_menu_markup())
+    except Exception as e:
+        logger.exception(f"research_dca_handler error: {e}")
+        await query.edit_message_text("❌ Bot DCA gặp lỗi.", reply_markup=main_menu_markup())
 
-            # --- Phân tích xu hướng (chỉ chọn xu hướng tăng) ---
-            avg, details = multi_tf_score(cid, mode="long")
-            per_tf_ok = all((details.get(tf, {"score": 0})["score"] >= (55 if tf != "1D" else 45)) for tf in ["15m", "1H", "4H", "1D"])
-            if not per_tf_ok:
-                continue
-
-            # --- Support/Resistance ---
-            df_d1 = get_ohlc_okx(cid, bar="1D", limit=90)
-            sup_d1, res_d1 = compute_support_resistance_from_df(df_d1, window=90)
-            res, sup = compute_support_resistance(df1h, window=90)
-            price = float(df1h.iloc[-1]["close"]) if not df1h.empty else MARKET_MAP.get(cid, {}).get("current_price", 0)
-            entry = suggest_entry(details.get("1H", {}).get("inds", {}), price, sup, res, mode="long")
-
-            # --- DCA Config ---
-            cfg15 = suggest_dca_future(price, 15, support=sup_d1, resistance=res_d1, direction="long")
-            cfg20 = suggest_dca_future(price, 20, support=sup_d1, resistance=res_d1, direction="long")
-            cfg30 = suggest_dca_future(price, 30, support=sup_d1, resistance=res_d1, direction="long")
-
-            results.append({
-                "coin": cid,
-                "avg_score": round(avg, 1),
-                "s15": round(details.get("15m", {"score": 0})["score"], 1),
-                "s1h": round(details.get("1H", {"score": 0})["score"], 1),
-                "s4h": round(details.get("4H", {"score": 0})["score"], 1),
-                "s1d": round(details.get("1D", {"score": 0})["score"], 1),
-                "price": round(price, 8),
-                "pct_24h": round(growth, 2),
-                "entry": entry,
-                "resistance": round(res, 8) if res else None,
-                "support": round(sup, 8) if sup else None,
-                "volq": MARKET_MAP.get(cid, {}).get("vol_quote_24h", 0),
-                "funding": funding,
-                "dca_15": cfg15,
-                "dca_20": cfg20,
-                "dca_30": cfg30,
-            })
-        except Exception:
-            logger.exception(f"DCA research error for {cid}")
-            continue
-
-    results = sorted(results, key=lambda x: (x["avg_score"], x["volq"], x["pct_24h"]), reverse=True)[:20]
-
-    if not results:
-        await safe_send(context.bot,
-            chat_id=chat_id,
-            text="❌ Không tìm thấy coin nào đủ điều kiện để tạo bot DCA.",
-            reply_markup=research_choice_markup()
-        )
-        return
-
-    lines = ["🤖 KẾT QUẢ RESEARCH DCA — Coin mới, funding âm, tăng trưởng mạnh\n━━━━━━━━━━━━━━━━━━━━━"]
-    for r in results:
-        lines.append(
-            f"\n {r['coin']}  | Score:  {r['avg_score']} \n"
-            f"🧭 15m/1H/4H/1D: {r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']} \n"
-            f"💧 Vol24h≈ {r['volq']:,.0f} USDT \n"
-            f"💰 Giá: {r['price']} | 24h: {r['pct_24h']}% \n"
-            f"📉 Funding: {r['funding']}\n"
-            f"🎯 Entry gợi ý: {r['entry']}\n"
-            f"🛑 Kháng cự: {r['resistance']} | 🛡️ Hỗ trợ: {r['support']} \n"
-        )
-
-    reply = "\n".join(lines)
-    await safe_send(context.bot, chat_id=chat_id, text=reply, parse_mode="HTML", reply_markup=research_choice_markup())
-
-
+# News handlers: pagination via callback data news:{page}
+async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    try:
+        data = query.data or ""
+        page = 0
+        if data.startswith("news:"):
+            try:
+                page = int(data.split(":")[1])
+            except Exception:
+                page = 0
+        items, has_more, total_pages = get_news_page(page, NEWS_PAGE_SIZE)
+        text = f"📰 Tin tức (Trang {page+1}/{total_pages})\\n\\n" + "\\n\\n".join(items)
+        buttons = []
+        row = []
+        if page > 0:
+            row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"news:{page-1}"))
+        if has_more:
+            row.append(InlineKeyboardButton("Next ➡️", callback_data=f"news:{page+1}"))
+        if row:
+            buttons.append(row)
+        buttons.append([InlineKeyboardButton("🔙 Back", callback_data="main")])
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+    except Exception as e:
+        logger.exception(f"news_page_handler error: {e}")
+        await query.edit_message_text("❌ Lỗi khi lấy tin tức.", reply_markup=main_menu_markup())
+		
 async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     logger.info(f"📩 Received message: {text}")
@@ -2435,27 +2412,54 @@ async def news_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), disable_web_page_preview=True)
 
 
-# ================== MAIN ==================
-def main():
-    refresh_markets()
-    app.post_init = set_main_menu
-    app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("research", research_command))
-    app.add_handler(CommandHandler("deepcoin", research_dca_bot))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_coin_handler))
-    app.add_handler(CallbackQueryHandler(callback_handler))
-    app.add_error_handler(error_handler)
+# ---------- Main startup ----------
+def build_application() -> Application:
+    app = Application.builder().token(TOKEN).build()
 
+    # register handlers
+    app.add_handler(CommandHandler("start", start_handler))
+    app.add_handler(CallbackQueryHandler(callback_handler))
+    app.add_handler(CallbackQueryHandler(news_page_handler, pattern=r"^news:"))
+    app.add_handler(CommandHandler("refresh_news", lambda u,c: (ensure_news_buffer(), u.message.reply_text(f"Refreshed: {len(NEWS_BUFFER)} items"))))
+
+    # set bot commands after startup
+    async def _post_init(application: Application):
+        try:
+            cmds = [
+                BotCommand("start", "Bắt đầu"),
+                BotCommand("refresh_news", "Refill news buffer"),
+            ]
+            await application.bot.set_my_commands(cmds)
+            logger.info("✅ Set bot commands")
+        except Exception as e:
+            logger.warning(f"set_my_commands failed: {e}")
+
+    app.post_init = _post_init
+    return app
+
+def main():
+    if not TOKEN:
+        logger.error("TELEGRAM_TOKEN not set. Set env var and restart.")
+        return
+
+    app = build_application()
+
+    # start optional healthcheck thread
     threading.Thread(target=start_healthcheck_server, args=(8081,), daemon=True).start()
 
-    port = int(os.getenv("PORT", 8080))
-    logger.info("🚀 Starting bot in webhook mode (PTB only)...")
+    # start webhook (this will be the foreground process - Railway should keep container alive)
+    logger.info("🚀 Starting bot in webhook mode...")
+    # ensure webhook url/path configured
+    if not PTB_WEBHOOK_URL or not PTB_WEBHOOK_PATH:
+        logger.error("PTB_WEBHOOK_URL or PTB_WEBHOOK_PATH is not set. Set env vars accordingly.")
+        return
+
     app.run_webhook(
         listen="0.0.0.0",
-        port=port,
+        port=PORT,
         url_path=PTB_WEBHOOK_PATH,
         webhook_url=PTB_WEBHOOK_URL,
-        drop_pending_updates=True
+        drop_pending_updates=True,
     )
 
 if __name__ == "__main__":

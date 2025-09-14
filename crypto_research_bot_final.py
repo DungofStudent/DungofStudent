@@ -2632,7 +2632,7 @@ def build_application() -> Application:
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.add_handler(CallbackQueryHandler(news_page_handler, pattern=r"^news:"))
     app.add_handler(CommandHandler("refresh_news", lambda u,c: (ensure_news_buffer(), u.message.reply_text(f"Refreshed: {len(NEWS_BUFFER)} items"))))
-	app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
 
 
     # set bot commands after startup

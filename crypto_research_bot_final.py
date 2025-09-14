@@ -2127,124 +2127,119 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         logger.exception("Error in background_price_checker")
 
-async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode="long"):
-    logger.info(f"📩 Received /research with args: {context.args}")
+
+import requests
+import datetime
+def get_funding_rate(symbol: str) -> float:
+    """
+    Lấy funding rate từ OKX (USDT Futures).
+    Nếu lỗi -> trả về 0.0
+    """
+    try:
+        url = "https://www.okx.com/api/v5/public/funding-rate"
+        params = {"instId": f"{symbol}-SWAP"}   # ví dụ: BTC-USDT-SWAP
+        r = requests.get(url, params=params, timeout=5)
+        r.raise_for_status()
+        data = r.json()
+        if data.get("code") == "0":
+            return float(data["data"][0]["fundingRate"])
+    except Exception as e:
+        logger.warning(f"get_funding_rate error {symbol}: {e}")
+    return 0.0
+
+async def research_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, mode: str = "long"):
+    """
+    Research coins theo xu hướng (long/short).
+    Lọc Futures USDT, tính trend_score trên H1/H4, chọn coin rõ ràng.
+    """
+    query = update.callback_query
     chat_id = update.effective_chat.id
-    await safe_send(context.bot,chat_id=chat_id, text=f"🔎 Đang quét coins ({mode.upper()})...")
+    lines = [f"🔎 Research {'📈 Long' if mode=='long' else '📉 Short'} (Futures USDT)\n"]
 
+    # chỉ lấy cặp USDT futures
+    coins = [c for c in MARKET_MAP.keys() if c.endswith("USDT")]
 
-    refresh_markets(MAX_SCAN)
-    liquid_syms = [c for c in COINS_LIST if MARKET_MAP.get(c,{}).get("vol_quote_24h",0) >= MIN_QUOTE_VOL]
-    liquid_syms = sorted(liquid_syms, key=lambda c: MARKET_MAP[c]["vol_quote_24h"], reverse=True)[:80]
-
-    results = []
-    for cid in liquid_syms:
+    for coin in coins:
         try:
-            avg, details = multi_tf_score(cid, mode=mode)
-            # Sửa KeyError: Kiểm tra nếu tf tồn tại trước khi truy cập
-            per_tf_ok = all((details.get(tf, {"score": 0})["score"] >= (55 if tf!="1D" else 45)) for tf in ["15m","1H","4H","1D"])
-            if not per_tf_ok:
+            df1h = get_ohlc_okx(coin, bar="1H", limit=200)
+            df4h = get_ohlc_okx(coin, bar="4H", limit=200)
+            if df1h.empty or df4h.empty:
                 continue
 
-        # --- D1 Support/Resistance cho coin này ---
-            df_d1 = get_ohlc_okx(cid, bar="1D", limit=90)
-            sup_d1, res_d1 = compute_support_resistance_from_df(df_d1, window=90)
+            s1h, ind1h = compute_trend_score(df1h, mode=mode)
+            s4h, ind4h = compute_trend_score(df4h, mode=mode)
 
-            df1h = get_ohlc_okx(cid, bar="1H", limit=200)
-            pct = percent_change_over_period(df1h, lookback=24) or 0.0
-            res, sup = compute_support_resistance(df1h, window=90)
-            price = float(df1h.iloc[-1]["close"]) if not df1h.empty else MARKET_MAP.get(cid,{}).get("current_price", 0)
+            if mode == "long" and (ind1h.get("signal") != "long" or ind4h.get("signal") != "long"):
+                continue
+            if mode == "short" and (ind1h.get("signal") != "short" or ind4h.get("signal") != "short"):
+                continue
 
-            entry = suggest_entry(details.get("1H",{}).get("inds",{}), price, sup, res, mode=mode)
-
-        # --- DCA & Grid ---
-            cfg15 = suggest_dca_future(price, 15, support=sup_d1, resistance=res_d1, direction=mode)
-            cfg20 = suggest_dca_future(price, 20, support=sup_d1, resistance=res_d1, direction=mode)
-            cfg30 = suggest_dca_future(price, 30, support=sup_d1, resistance=res_d1, direction=mode)
-            grid10 = grid_levels(price, support=sup, resistance=res, grids=10)
-
-            results.append({
-                "coin": cid,
-                "avg_score": round(avg,1),
-                "s15": round(details.get("15m", {"score": 0})["score"],1),
-                "s1h": round(details.get("1H", {"score": 0})["score"],1),
-                "s4h": round(details.get("4H", {"score": 0})["score"],1),
-                "s1d": round(details.get("1D", {"score": 0})["score"],1),
-                "price": round(price, 8),
-                "pct_24h": round(pct, 2),
-                "entry": entry,
-                "resistance": round(res, 8) if res else None,
-                "support": round(sup, 8) if sup else None,
-                "volq": MARKET_MAP.get(cid,{}).get("vol_quote_24h",0),
-                "dca_15": cfg15,
-                "dca_20": cfg20,
-                "dca_30": cfg30,
-                "grid_10": grid10
-            })
-
+            volq = MARKET_MAP[coin].get("vol_quote_24h", 0)
+            lines.append(f"• {coin:<10} | Xu hướng: {'📈 Long' if mode=='long' else '📉 Short'} | Thanh khoản: {volq:,.0f} USDT")
         except Exception:
-            logger.exception(f"research error for {cid}")
-            continue
-    results = sorted(results, key=lambda x: (x["avg_score"], x["volq"], abs(x["pct_24h"])), reverse=True)[:25]
-    if not results:
-        await safe_send(context.bot,
-            chat_id=chat_id,
-            text="❌ Không tìm thấy coin có xu hướng rõ ràng và thanh khoản đủ.",
-            reply_markup=research_choice_markup()
-	)
-        return
+            logger.exception(f"research_handler error {coin}")
 
-
-    lines = [f"📊 KẾT QUẢ RESEARCH ({mode.upper()}) — Ưu tiên Thanh khoản & Xu hướng rõ ràng\n━━━━━━━━━━━━━━━━━━━━━"]
-    for r in results:
-                lines.append(
-            f"\n {r['coin']}  | Score(avg):  {r['avg_score']} \n"
-            f"🧭 15m/1H/4H/1D:  {r['s15']}/{r['s1h']}/{r['s4h']}/{r['s1d']} \n"
-            f"💧 Vol24h≈  {r['volq']:,.0f} USDT \n"
-            f"💰 Giá:  {r['price']}  | 24h:  {r['pct_24h']}% \n"
-            f"🎯 Entry gợi ý: {r['entry']}\n"
-            f"🛑 Kháng cự:  {r['resistance']}  | 🛡️ Hỗ trợ:  {r['support']} \n"
-        )
-    reply = "\n".join(lines)
-
-
-    await safe_send(context.bot,
-        chat_id=chat_id,
-        text=reply,
-        parse_mode="HTML",
-        reply_markup=research_choice_markup()
-    )
+    text = "\n".join(lines) if len(lines) > 1 else "❌ Không tìm thấy coin phù hợp."
+    await safe_send(context.bot, chat_id=chat_id, text=text)
 
 async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Research coins cho Bot DCA:
+    - Thanh khoản cao
+    - Volume lớn
+    - Coin mới (<90 ngày)
+    - Funding âm
+    """
     query = update.callback_query
-    await query.answer()
-    try:
-        # show processing
-        await query.edit_message_text("⏳ Scanning for Bot DCA candidates... (demo top coins)")
-        results = []
-        candidates = filter_dca_candidates(TOP_COINS)
-        for coin in candidates:
-            df1d = get_ohlc_okx(coin, bar="1D", limit=200)
-            if df1d.empty or len(df1d) < 5:
-                logger.warning(f"No 1D data for {coin}, skip")
+    chat_id = update.effective_chat.id
+    lines = ["🤖 Bot DCA - Gợi ý (Futures USDT)\n"]
+
+    now = datetime.datetime.utcnow()
+    coins = [c for c in MARKET_MAP.keys() if c.endswith("USDT")]
+
+    for coin in coins:
+        try:
+            volq = MARKET_MAP[coin].get("vol_quote_24h", 0)
+            listed_date = MARKET_MAP[coin].get("listed_at")  # datetime
+            if not listed_date:
                 continue
-            price = float(df1d.iloc[-1]["close"])
-            # simple filter: 24h growth > 2%
-            try:
-                prev = float(df1d.iloc[-2]["close"])
-                growth_24h = ((price - prev) / prev) * 100 if prev != 0 else 0.0
-            except Exception:
-                growth_24h = 0.0
-            if growth_24h < 2.0:
+            age_days = (now - listed_date).days
+            if volq < 1e7 or age_days > 90:   # thanh khoản >= 10M, coin < 90 ngày
                 continue
-            sup = float(df1d["low"].tail(90).min()) if len(df1d) >= 90 else float(df1d["low"].min())
-            cfg15 = suggest_dca_future(price, 15, support=sup)
-            results.append(f"{coin} | price {price:.6f} | 24h {growth_24h:.2f}% | max_dd {cfg15.get('max_dd_pct','-')}%")
-        text = dca_result_to_text(results)
-        await query.edit_message_text(text, reply_markup=main_menu(query))
-    except Exception as e:
-        logger.exception(f"research_dca_handler error: {e}")
-        await query.edit_message_text("❌ Bot DCA gặp lỗi.", reply_markup=main_menu(query))
+
+            fr = get_funding_rate(coin)
+            if fr >= 0:
+                continue
+
+            # dữ liệu giá để tính hỗ trợ
+            df = get_ohlc_okx(coin, bar="1D", limit=200)
+            if df.empty:
+                continue
+            price = float(df.iloc[-1]["close"])
+            sup, res = compute_support_resistance(df, window=90)
+
+            # sinh lệnh DCA
+            def gen_dca_steps(n: int, support: float):
+                step_pct = (price - support) / price / n
+                return [price * (1 - step_pct * i) for i in range(1, n+1)]
+
+            d15 = gen_dca_steps(15, sup)
+            d20 = gen_dca_steps(20, sup)
+            d30 = gen_dca_steps(30, sup)
+
+            lines.append(
+                f"• {coin:<10} | Funding: {fr:.4%} | Thanh khoản: {volq:,.0f}\n"
+                f"   🔹 15 lệnh: {', '.join(f'{x:.4f}' for x in d15[:3])}...\n"
+                f"   🔹 20 lệnh: {', '.join(f'{x:.4f}' for x in d20[:3])}...\n"
+                f"   🔹 30 lệnh: {', '.join(f'{x:.4f}' for x in d30[:3])}..."
+            )
+
+        except Exception:
+            logger.exception(f"research_dca_handler error {coin}")
+
+    text = "\n\n".join(lines) if len(lines) > 1 else "❌ Không tìm thấy coin phù hợp."
+    await safe_send(context.bot, chat_id=chat_id, text=text)
+
 
 # News handlers: pagination via callback data news:{page}
 async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):

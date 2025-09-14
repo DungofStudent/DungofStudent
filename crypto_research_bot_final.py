@@ -223,16 +223,15 @@ alerts = {}
 def main_menu(update: Update):
     keyboard = [
         [
-            InlineKeyboardButton("🔎 Research Long", callback_data="research_long"),
-            InlineKeyboardButton("🔎 Research Short", callback_data="research_short"),
+            InlineKeyboardButton("🔎 Research", callback_data="research_btn"),
+            InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_btn")
         ],
         [
-            InlineKeyboardButton("🤖 Bot DCA", callback_data="bot_dca_bull"),
             InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0"),
+            InlineKeyboardButton("📰 Tin tức", callback_data="news_market_menu")
         ],
         [
-            InlineKeyboardButton("📰 Tin tức", callback_data="news"),
-            InlineKeyboardButton("❌ Alerts", callback_data="alerts"),
+            InlineKeyboardButton(f"{'✅' if is_alert_on else '❌'} Alerts", callback_data="toggle_alert")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)

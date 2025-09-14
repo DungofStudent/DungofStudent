@@ -229,9 +229,6 @@ def main_menu(update: Update):
         [
             InlineKeyboardButton("📊 Top Coins", callback_data="topcoins:0"),
             InlineKeyboardButton("📰 Tin tức", callback_data="news_market_menu")
-        ],
-        [
-            InlineKeyboardButton(f"{'✅' if is_alert_on else '❌'} Alerts", callback_data="toggle_alert")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)

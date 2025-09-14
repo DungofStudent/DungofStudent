@@ -1844,6 +1844,7 @@ async def research_long_short_handler(update: Update, context: ContextTypes.DEFA
     # if called by message (text), emulate long by default
     if isinstance(update, Update) and update.callback_query:
         await research_callback_wrapper(update, context)
+        return
     else:
         await research_run(update.message, context, mode="long")
 
@@ -1856,6 +1857,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("research:"):
         _, symbol, mode = data.split(":")
         await research_handler(update, context, symbol=symbol, mode=mode)
+        return
 
     if data == "main":
         await query.edit_message_text("🏠 Menu", reply_markup=main_menu(update.effective_user.id))
@@ -1916,9 +1918,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data in ("research_long", "research_short"):
         await research_callback_wrapper(update, context)
         return
+        return
 		
     if data == "research_btn":
         await query.edit_message_text("🔎 Chọn chế độ Research:", reply_markup=research_choice_markup())
+        return", reply_markup=research_choice_markup())
         return
 		
     elif data == "news_market_menu":
@@ -1932,7 +1936,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("news_market:"):
         coin = data.split(":")[1]
-        news_list = get_news_general()
+        news_list = fetch_all_news()
         news_text = "📰 Tin tức thị trường:\n\n"  "\n\n".join(news_list)
         await safe_send(context.bot,chat_id=chat_id, text=news_text, reply_markup=news_menu_markup(coin))
 
@@ -1957,6 +1961,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "bot_dca_bull":
         await research_dca_handler(update, context)
+        return
         return
 
     elif data.startswith("dca:"):
@@ -1996,6 +2001,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "news_market_menu" or data.startswith("news_market"):
         await news_market_handler(update, context)
+        return
 
     if data == "news_more":
         batch, has_more = get_news_batch(15)
@@ -2010,6 +2016,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("news:"):
         await news_page_handler(update, context)
+        return
         return
 
     # fallback
@@ -2036,7 +2043,7 @@ async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
         global LAST_NEWS_HOUR, LAST_NEWS_IDS
         if LAST_NEWS_HOUR is None or (utcnow - LAST_NEWS_HOUR) >= NEWS_HOURLY_COOLDOWN:
             try:
-                articles = get_news_general(limit=10) or []
+                articles = fetch_all_news(limit=10) or []
             except Exception:
                 articles = []
             new_articles = []
@@ -2418,7 +2425,7 @@ async def ai_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE, coin: 
 async def news_market_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global LAST_NEWS_IDS
     try:
-        news_list = get_news_general(limit=20)  # lấy nhiều rồi lọc
+        news_list = fetch_all_news(limit=20)  # lấy nhiều rồi lọc
         sent = 0
         out = []
         for n in news_list:

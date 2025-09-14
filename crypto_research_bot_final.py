@@ -1865,11 +1865,6 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=main_menu(user_id)
         )
         return
-
-    if data in ("research_long", "research_short"):
-        await research_callback_wrapper(update, context)
-        return
-        return
 		
     elif data == "research_btn":
         # show research options

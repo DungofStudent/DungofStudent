@@ -1748,7 +1748,7 @@ async def reset_webhook(app: Application):
 # ================== HANDLERS ==================
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"📩 Received /start from user {update.effective_user.id if update.effective_user else 'unknown'}")
-    await update.message.reply_text("👋 Crypto Research Bot", reply_markup=main_menu(update.effective_user.id))
+    await update.message.reply_text("👋 Crypto Research Bot", reply_markup=main_menu(update_obj.from_user.id))
 
 async def research_run(update_obj, context: ContextTypes.DEFAULT_TYPE, mode: str = "long"):
     """Run research scanning TOP_COINS; update_obj may be callback_query or message object (for flexibility)."""
@@ -1771,15 +1771,15 @@ async def research_run(update_obj, context: ContextTypes.DEFAULT_TYPE, mode: str
         text = "📊 Research results:\\n\\n" + ("\\n".join(results) if results else "❌ Không có dữ liệu để phân tích.")
         # reply or edit back to menu
         if hasattr(update_obj, "edit_message_text"):
-            await update_obj.edit_message_text(text, reply_markup=main_menu(update.effective_user.id))
+            await update_obj.edit_message_text(text, reply_markup=main_menu(update_obj.from_user.id))
         else:
-            await update_obj.reply_text(text, reply_markup=main_menu(update.effective_user.id))
+            await update_obj.reply_text(text, reply_markup=main_menu(update_obj.from_user.id))
     except Exception as e:
         logger.exception(f"research_run error: {e}")
         if hasattr(update_obj, "edit_message_text"):
-            await update_obj.edit_message_text("❌ Research gặp lỗi.", reply_markup=main_menu(update.effective_user.id))
+            await update_obj.edit_message_text("❌ Research gặp lỗi.", reply_markup=main_menu(update_obj.from_user.id))
         else:
-            await update_obj.reply_text("❌ Research gặp lỗi.", reply_markup=main_menu(update.effective_user.id))
+            await update_obj.reply_text("❌ Research gặp lỗi.", reply_markup=main_menu(update_obj.from_user.id))
 
 async def research_callback_wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # helper to call research_run with callback_query.message as target for editing
@@ -1805,7 +1805,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await research_handler(update, context, symbol=symbol, mode=mode)
 
     if data == "main":
-        await query.edit_message_text("🏠 Menu", reply_markup=main_menu(update.effective_user.id))
+        await query.edit_message_text("🏠 Menu", reply_markup=main_menu(update_obj.from_user.id))
         return
 
     elif data.startswith("topcoins:"):
@@ -1960,7 +1960,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # fallback
-    await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update.effective_user.id))
+    await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update_obj.from_user.id))
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):
@@ -2176,10 +2176,10 @@ async def research_dca_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             cfg15 = suggest_dca_future(price, 15, support=sup)
             results.append(f"{coin} | price {price:.6f} | 24h {growth_24h:.2f}% | max_dd {cfg15.get('max_dd_pct','-')}%")
         text = dca_result_to_text(results)
-        await query.edit_message_text(text, reply_markup=main_menu(update.effective_user.id))
+        await query.edit_message_text(text, reply_markup=main_menu(update_obj.from_user.id))
     except Exception as e:
         logger.exception(f"research_dca_handler error: {e}")
-        await query.edit_message_text("❌ Bot DCA gặp lỗi.", reply_markup=main_menu(update.effective_user.id))
+        await query.edit_message_text("❌ Bot DCA gặp lỗi.", reply_markup=main_menu(update_obj.from_user.id))
 
 # News handlers: pagination via callback data news:{page}
 async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2207,7 +2207,7 @@ async def news_page_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(buttons))
     except Exception as e:
         logger.exception(f"news_page_handler error: {e}")
-        await query.edit_message_text("❌ Lỗi khi lấy tin tức.", reply_markup=main_menu(update.effective_user.id))
+        await query.edit_message_text("❌ Lỗi khi lấy tin tức.", reply_markup=main_menu(update_obj.from_user.id))
 		
 async def text_coin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
@@ -2472,3 +2472,14 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def dca_result_to_text(results: Dict[str, Any]) -> str:
+    """
+    Chuyển kết quả DCA thành chuỗi text để gửi cho user.
+    """
+    lines = ["📊 Kết quả DCA:"]
+    for symbol, data in results.items():
+        roi = data.get('roi', 0)
+        avg_entry = data.get('avg_entry', 0)
+        lines.append(f"{symbol}: ROI={roi:.2f}% | Avg Entry={avg_entry}")
+    return "\n".join(lines)

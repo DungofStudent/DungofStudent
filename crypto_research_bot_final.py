@@ -1960,7 +1960,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # fallback
-    await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update_obj.from_user.id))
+    #await query.edit_message_text("❓ Unknown action", reply_markup=main_menu(update_obj.from_user.id))
 
 import datetime as dt
 async def background_price_checker(context: ContextTypes.DEFAULT_TYPE):

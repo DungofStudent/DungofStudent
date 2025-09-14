@@ -1795,6 +1795,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "main":
         await safe_edit(query.message, "🏠 Main Menu", reply_markup=main_menu(update))
+        return
 
     if data.startswith("topcoins:"):
         page = int(data.split(":")[1])
@@ -1902,8 +1903,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "research_long":
         await research_handler(update, context, mode="long")
+        return
     elif data == "research_short":
         await research_handler(update, context, mode="short")
+        return
     
     if data == "bot_dca_btn":
         # show dca options; for demo we only have bull option
@@ -1914,6 +1917,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "bot_dca_bull":
         await research_dca_handler(update, context)
+        return
 
     elif data.startswith("dca:"):
         coin = data.split(":")[1]
